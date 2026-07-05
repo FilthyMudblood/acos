@@ -104,7 +104,7 @@ streamlit run frontend/app_os_terminal.py
   title        = {{ACOS (AgentOS): Governed AI Agent Execution --- Reference Implementation}},
   year         = {2026},
   publisher    = {Zenodo},
-  url          = {https://github.com/<org>/acos_codex}
+  url          = {https://github.com/FilthyMudblood/acos}
 }
 ```
 
