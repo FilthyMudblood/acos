@@ -1,0 +1,114 @@
+# ==============================================================================
+# AC-OS (Aegis Cortex) - Core Architecture Manifest
+# VERSION: 1.3
+# IDENTITY: Single-loop runtime orchestrator with strict Aegis governance boundaries.
+# CORE_PHILOSOPHY: Noesis proposes, Aegis arbitrates, Runtime executes.
+# DESIGN_THESIS: Deterministic governance constrains probabilistic cognition.
+# ==============================================================================
+
+runtime_authority:
+  owner: "agent_os_runtime.py"
+  role: "Single execution authority and loop owner."
+  notes:
+    - "Coordinates ingress -> noesis step -> acc/vitals pulse -> egress -> physical execution."
+    - "Physical tool dispatch is executed in runtime syscall dispatcher."
+
+architecture_planes:
+  noesis_plane:
+    role: "Topological proposer (probabilistic cognition)."
+    nature: "Non-deterministic reasoning + deterministic intent adaptation."
+    privilege: "No direct physical tool sovereignty."
+    output: "NoesisActionIntent from tensor state and latest reasoning trace."
+
+  aegis_plane:
+    role: "Deterministic arbiter."
+    nature: "Strict computable policy and trust evaluation."
+    privilege: "Arbitration sovereignty (approve/reject/meltdown), not direct physical dispatch."
+    output: "AegisDecision with trust/risk tags."
+
+  vitals_plane:
+    role: "Out-of-band metabolism and conflict monitoring."
+    nature: "Pulse-driven watchdog."
+    privilege: "Can inject damping metadata and trigger metabolic meltdown resolve."
+
+governance_organs:
+  aegis_ingress:
+    module: "core_aegis/ingress_gate.py + core_aegis/amygdala_policy.py"
+    mechanism:
+      - "Input sanitize/trim and session policy seed."
+      - "Amygdala-style regex risk scan for tci_score/module/hijack_flag."
+    guaranteed_behaviors:
+      - "Assign compute budget and allowed_tools."
+      - "If hijack risk is high, egress can hard-meltdown later."
+    non_goals:
+      - "No hard real-time SLA is currently guaranteed."
+      - "Not a full semantic malformed-input parser."
+
+  unified_acc:
+    module: "core_vitals/acc_monitor.py"
+    mechanism:
+      - "Evaluates logical entropy and conflict score per step."
+      - "Injects damping when entropy exceeds threshold."
+      - "Sets acc_conflict_alert and s_score metadata."
+    action:
+      - "Raises risk tags consumed by egress trust/risk arbitration."
+
+  hypothalamus_monitor:
+    module: "core_vitals/metabolism_circuit_breaker.py"
+    mechanism:
+      - "Maintains health index h and its first/second derivative (dh, d2h)."
+      - "Tracks effective token cost and budget pressure."
+    hard_rules:
+      - "Intervention HARD_MELTDOWN when d2h <= -0.1 or survival priority falls below threshold."
+      - "Intervention BUDGET_EXHAUSTED when effective_tokens > base_budget."
+    action:
+      - "Resolves tensor with metabolic meltdown attractor."
+
+  aegis_egress:
+    module: "core_aegis/egress_gate.py + core_aegis/aegis_egress.py"
+    mechanism:
+      - "Builds ACCSignal (drift/entropy) and IntentSignal (tool criticality) from request payload."
+      - "Applies non-linear equation gateway as sole egress arbitrator."
+      - "Maintains effective_risk, trust_level, and ICU mode in session policy state."
+      - "Enforces schema guard and allowed_tools whitelist for TOOL_CALL actions."
+    action:
+      - "REJECT when equation risk exceeds R_MAX."
+      - "REJECT malformed or unauthorized tool calls."
+      - "APPROVE only equation-compliant actions."
+
+data_flow_protocol:
+  step_1: "Raw input -> Aegis ingress (sanitize, budget, risk seed)."
+  step_2: "Ingress payload -> Noesis bootstrap to GlobalStateTensor."
+  step_3: "Runtime loop: Noesis run_step -> intent -> request build."
+  step_4: "ACC pre-egress scoring tags conflict/entropy risk."
+  step_5: "Aegis egress arbitration (trust + policy + whitelist/ICU filtering)."
+  step_6: "Runtime executes approved physical action OR handles rejection/meltdown."
+  step_7: "Pulse bus broadcasts to Hypothalamus and ACC for out-of-band feedback."
+
+execution_sovereignty_contract:
+  runtime_executes: true
+  aegis_arbitrates: true
+  noesis_executes_directly: false
+  statement: "Aegis has decision sovereignty; runtime has physical execution sovereignty."
+
+engineering_and_testing_guidelines:
+  adapter_policy:
+    - "Noesis adapters are part of production path for intent mapping."
+    - "Policy enforcement must remain in Aegis/Vitals, not in adapters."
+  deterministic_fixtures:
+    sql_guard_keywords: ["drop table", ";--", "1=1"]
+    paradox_guard_keywords: ["1 等于 2", "死胡同", "推演 10 次"]
+  deployment_rule:
+    - "Hardcoded guards may exist as deterministic fallback, but risk arbitration source of truth is egress equation pipeline."
+    - "Do not claim regex fixtures as full production safety proof."
+
+source_of_truth_refs:
+  - "docs/agentos_architecture.md"
+  - "agent_os_runtime.py"
+  - "core_aegis/gateway_runtime.py"
+  - "core_aegis/ingress_gate.py"
+  - "core_aegis/egress_gate.py"
+  - "core_aegis/aegis_egress.py"
+  - "core_runtime/runtime_stack.py"
+  - "core_vitals/acc_monitor.py"
+  - "core_vitals/metabolism_circuit_breaker.py"

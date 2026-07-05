@@ -1,0 +1,9 @@
+# Force light UI on all hosts (decoupled from OS / browser dark mode).
+# Copy this repo to ECS as-is; do not rely on "Settings → Theme" on each machine.
+
+[theme]
+base = "light"
+primaryColor = "#111827"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f8fafc"
+textColor = "#111827"

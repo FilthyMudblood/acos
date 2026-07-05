@@ -1,0 +1,4 @@
+.env
+.streamlit/secrets.toml
+.streamlit_local/secrets.toml
+.DS_Store
