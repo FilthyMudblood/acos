@@ -4,8 +4,6 @@
 
 ACOS separates **intent proposal** from **physical execution**. The LLM outputs structured action intents—it does not call APIs, databases, or filesystems directly. Every proposal passes through a deterministic policy gateway (budget limits, tool whitelist, schema validation, cross-step risk scoring) before the runtime executor runs anything.
 
-> **中文**：ACOS 是受控 Agent 运行时。LLM 只负责提议结构化动作；策略网关仲裁通过后，运行时才会执行工具。旁路监控持续检测逻辑漂移与资源消耗异常。
-
 **Repository:** https://github.com/FilthyMudblood/acos
 
 ---
