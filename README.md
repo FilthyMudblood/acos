@@ -41,7 +41,7 @@ reason → propose intent → drift pre-scan → policy approve/reject → execu
 
 | Document | Description |
 |----------|-------------|
-| **[Whitepaper](docs/WHITEPAPER.md)** | Industry architecture, cross-step risk, deployment levels |
+| **[Whitepaper](docs/WHITEPAPER.md)** | Industry architecture, cross-step risk, LangGraph comparison (§12) |
 | **[Code Logic](docs/acos_logic_flow.md)** | Step-by-step runtime walkthrough |
 | **[Implementation Status](docs/implementation_status.md)** | Known gaps and contributor priorities |
 | [RFC draft — Zero-Trust Execution Contract](docs/aegis_ccb_zero_trust_execution_contract_rfc_draft.md) | Normative execution boundary |

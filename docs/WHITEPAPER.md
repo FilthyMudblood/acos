@@ -365,6 +365,8 @@ Treat this codebase as a **reference architecture and evaluation harness**, not 
 
 ## 12. Comparison at a Glance
 
+### 12.1 Typical agent frameworks vs ACOS
+
 | | Typical agent framework | ACOS |
 |---|------------------------|------|
 | Tool invocation | Model → tool directly | Model → intent → policy → tool |
@@ -372,6 +374,66 @@ Treat this codebase as a **reference architecture and evaluation harness**, not 
 | Cross-step attacks | Often undetected | Stateful risk accumulation |
 | Audit | Chat transcripts | Structured gate status + termination cause |
 | Runaway sessions | Manual kill / cost alerts | Step budget + circuit breaker + retry cap |
+
+### 12.2 LangGraph vs ACOS — different problems
+
+LangGraph is a **workflow engine** (how to orchestrate agents). ACOS is an **execution governor** (whether an agent may cause real side effects). They are complementary, not direct substitutes.
+
+```text
+LangGraph  = how to route, branch, pause, and coordinate agents
+ACOS       = whether a proposed action may execute on real systems
+```
+
+| Dimension | LangGraph | ACOS (this reference implementation) |
+|-----------|-----------|--------------------------------------|
+| **Orchestration** | Strong: conditional edges, parallel nodes, subgraphs, handoffs | Weak: single linear step loop in `run_agent_os_once()` |
+| **Execution governance** | Weak by default: `ToolNode` invokes tools directly | Strong: Policy Gateway + cross-step Risk Engine |
+| **Checkpoint / human-in-the-loop** | Built-in pause, resume, thread persistence | Not implemented; session ends when loop resolves |
+| **Multi-agent patterns** | Documented supervisor / handoff / swarm patterns | Not implemented; one proposer per session today |
+| **Ecosystem** | Large: LangChain tools, integrations, LangSmith | Small: mock tools, Streamlit UI, internal tests |
+| **Maturity** | Widely adopted for agent demos and products | L1 prototype; no third-party security audit |
+| **Latency** | Shorter path when tools run directly | Higher: drift scan + egress + audit every step |
+| **Salami-slicing / cross-step veto** | No session-level `R_effective` by default | Core feature via stateful Risk Engine |
+| **Auditable physical deny** | Must be inferred from logs | `physical_gate_status`, `termination_cause` |
+
+### 12.3 Where ACOS is weaker than LangGraph
+
+1. **Orchestration** — the largest gap. No first-class support for branching workflows, parallel specialists, dynamic routing, or approval gates.
+2. **Developer experience** — fewer examples, integrations, and debugging tooling compared to the LangGraph / LangSmith stack.
+3. **State persistence** — no checkpoint API for long-running or human-interrupted tasks.
+4. **Multi-agent** — no sub-agent roles, shared-handoff protocol, or per-role tool surfaces in the current codebase.
+5. **Implementation completeness** — `OVERRIDE`, ICU enforcement, strict intent parsing, and production connectors remain open (see Section 11).
+
+### 12.4 Where ACOS is stronger than LangGraph
+
+1. **Proposal ≠ execution** — hard boundary; the model cannot call APIs without an explicit `APPROVED` decision.
+2. **Cross-temporal risk** — incremental escalation accumulates in session state; the salami-slicing benchmark demonstrates veto on the exfiltration step.
+3. **Separated telemetry** — physical policy blocks are not confused with model refusals in chat text.
+4. **Deterministic egress hot path** — arbitration math is replayable without LLM calls in the decision path.
+5. **Tool criticality** — `criticality_score` feeds the Risk Engine; read vs act vs export are weighted differently.
+
+### 12.5 Multi-agent scenarios
+
+Multi-agent needs do **not** automatically require LangGraph. The clean pattern for governed multi-agent is:
+
+```text
+Thin supervisor (routing only)
+    → multiple Intent Proposers (role-specific prompts + tool visibility)
+    → single Policy Gateway (shared session risk state)
+    → single Runtime Executor
+```
+
+LangGraph may implement the supervisor layer when workflows are complex (parallel branches, frequent human interrupts). ACOS must still own the execution choke point. Letting each sub-agent bind and invoke tools independently defeats the governance model.
+
+### 12.6 When to use which
+
+| Primary pain | Better fit |
+|--------------|------------|
+| Complex workflow, multi-agent coordination, fast demo | LangGraph (or similar orchestrator) |
+| Tool privilege abuse, prompt injection, cross-step exfiltration, explainable deny | ACOS |
+| Both | Thin orchestration + ACOS gateway on every side-effecting step (higher integration cost) |
+
+For a single governed agent loop, **adding LangGraph often duplicates orchestration** already present in `run_agent_os_once()`. Prefer extending ACOS before bolting on a second workflow engine unless team or product constraints require LangGraph specifically.
 
 ---
 
