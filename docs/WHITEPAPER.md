@@ -14,9 +14,29 @@
 
 Enterprise AI agents are being deployed with the same privilege model as backend services: the model decides, the runtime executes. That design fails the moment prompt injection, jailbreaks, or gradual policy erosion turn probabilistic text generation into irreversible API calls, database writes, refunds, or data exports.
 
-**ACOS (AgentOS)** is an agent runtime that enforces a hard boundary between **intent** and **execution**. The language model may propose structured actions. It may not invoke tools, networks, or filesystems directly. Every proposal passes through a deterministic policy gateway that maintains cross-step risk state, enforces tool whitelists and schema validation, and emits an auditable allow/deny decision before any physical side effect occurs.
+### What ACOS is
+
+**ACOS is a governed execution boundary** — a deterministic policy layer between **intent** and **physical side effects**.
+
+| Layer | What it is | In this repository |
+|-------|------------|-------------------|
+| **Essence (invariant)** | Proposal ≠ execution; cross-step risk accumulates; every deny is auditable and replayable | Protocol + Risk Engine + gateway contract |
+| **Core product kernel** | **Policy Gateway** — ingress budget, egress arbitration, tool whitelist, schema guards | `AegisGatewayRuntime`, `egress_gate`, `aegis_egress` |
+| **Reference packaging** | **Agent runtime** — a full loop that hosts proposer, gateway, executor, and monitors to prove the contract | `run_agent_os_once()` in `agent_os_runtime.py` |
+
+The open-source repo ships a **reference runtime** to demonstrate the gateway. The long-term product is the **governance layer**, not another workflow engine.
+
+**One-line positioning:** *LangGraph orchestrates. ACOS authorizes.* ACOS does not replace orchestrators; it governs whether a proposed action may execute on real systems.
+
+The language model may propose structured actions. It may not invoke tools, networks, or filesystems directly. Every proposal passes through the Policy Gateway, which maintains cross-step risk state and emits an explicit `APPROVED` / `REJECTED` / `HARD_MELTDOWN` decision before any physical side effect occurs.
 
 This is not “better prompting.” It is **execution governance**: the same class of control you already apply to service accounts, IAM roles, and API gateways—applied to autonomous agent loops.
+
+**What ACOS is not:**
+
+- Not a LangGraph replacement (no graph orchestration, checkpointing, or multi-agent UX as core value)
+- Not a generic HTTP reverse proxy (stateful risk, tool criticality, and session budget are first-class)
+- Not a certified production appliance in its current form (L1 reference implementation)
 
 **What you get:**
 

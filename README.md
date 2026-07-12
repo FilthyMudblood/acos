@@ -1,8 +1,16 @@
 # ACOS (AgentOS)
 
-**A governed AI agent runtime: the model proposes actions; the policy gateway approves them; tools run only after authorization.**
+**A governed execution layer for AI agents — not a workflow engine.**
 
-ACOS separates **intent proposal** from **physical execution**. The LLM outputs structured action intents—it does not call APIs, databases, or filesystems directly. Every proposal passes through a deterministic policy gateway (budget limits, tool whitelist, schema validation, cross-step risk scoring) before the runtime executor runs anything.
+ACOS enforces one rule: **proposal ≠ execution**. The model outputs structured intents; a **Policy Gateway** arbitrates every proposal (budget, whitelist, cross-step risk); a **Runtime Executor** invokes tools only after `APPROVED`.
+
+| | |
+|---|--|
+| **Essence** | Governed execution boundary |
+| **Core kernel** | Policy Gateway (ingress + egress + Risk Engine) |
+| **This repo** | Reference **runtime** that embeds the gateway to prove the contract |
+
+*LangGraph orchestrates. ACOS authorizes.*
 
 **Repository:** https://github.com/FilthyMudblood/acos
 
