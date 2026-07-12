@@ -59,6 +59,129 @@ reason → propose intent → drift pre-scan → policy approve/reject → execu
 
 ---
 
+## What Problems ACOS Solves
+
+| Problem | Without ACOS | With ACOS |
+|---------|--------------|-----------|
+| **Direct tool privilege** | The model calls APIs/DB/files directly | Model proposes intents only; Policy Gateway must approve |
+| **Salami-slicing attacks** | Each step looks low-risk; exfiltration happens on step N | Cross-step `R_effective` accumulates session risk |
+| **Audit ambiguity** | "Model refused" vs "policy blocked" look the same in chat logs | `physical_gate_status` and `termination_cause` are structured |
+| **Runaway sessions** | Retries and loops burn tokens with no hard stop | Step budget, retry cap, budget circuit breaker |
+| **Unauthorized tools** | Any bound tool may run | Dynamic whitelist + schema validation + tool `criticality_score` |
+
+ACOS does **not** replace workflow design, RAG, or multi-agent routing. It answers one question: **may this proposed action execute on a real system?**
+
+---
+
+## When to Use ACOS
+
+### Use ACOS standalone
+
+Best when the workload is a **single governed agent loop** and you do not need graph orchestration:
+
+- Internal ops agents (refund lookup, ticket triage, read-only queries)
+- Regulated or high-stakes tool access (finance, healthcare, customer PII)
+- Security reviews and PoCs that must prove fail-closed execution
+- Teams that want zero LangChain/LangGraph dependency
+
+**How:** run `run_agent_os_once()` or the Streamlit UI — the built-in loop handles propose → govern → execute.
+
+### Use ACOS with LangGraph (complementary)
+
+Best when you already need **workflow orchestration** and also need **execution governance**:
+
+- Multi-step approval flows, branching, human-in-the-loop checkpoints
+- Multi-agent handoffs (research → execute → review)
+- Existing LangGraph graphs that today use `ToolNode` directly
+
+**Pattern:** LangGraph orchestrates; Aegis authorizes. The graph routes between nodes; every side-effecting step calls the Policy Gateway before invoking a tool.
+
+```text
+LangGraph node (LLM / router)
+    → structured intent (tool_call, params)
+    → AegisGatewayRuntime.egress_gate()
+    → if APPROVED → PhysicalToolRegistry handler
+    → result back into graph state
+```
+
+Do **not** wire LangGraph `ToolNode` to call tools directly — that bypasses the gateway. A governed-tool node or thin SDK wrapper is required (integration guide: see [Whitepaper §12](docs/WHITEPAPER.md)).
+
+### When ACOS is not the right fit
+
+- Single-turn Q&A with no tools
+- Latency-critical paths where per-step arbitration overhead is unacceptable
+- Teams that only need graph UX and have no governed-execution requirement
+
+---
+
+## How to Use ACOS
+
+### Standalone (this repository)
+
+**1. Install and configure** — see [Quick Start](#quick-start) below.
+
+**2. Run a session**
+
+```python
+import asyncio
+from agent_os_runtime import run_agent_os_once
+
+result = asyncio.run(
+    run_agent_os_once(
+        "Look up refund status for order ORD-12345",
+        return_diagnostics=True,
+        enable_egress=True,
+        enable_acc=True,
+        enable_hypothalamus=True,
+    )
+)
+print(result["final_output"])
+print(result["termination_cause"])   # why the session ended
+print(result["physical_gate_status"])  # policy outcome
+```
+
+**3. Inspect telemetry** — Streamlit **System Telemetry** tab, or `result` fields: `effective_risk`, `tool_invocations`, `acc_conflict_score`.
+
+**4. Register production tools** — inject a custom `PhysicalToolRegistry` into `run_agent_os_once()` instead of the default mock handlers.
+
+### With LangGraph (integration pattern)
+
+ACOS does not ship a LangGraph adapter yet. The intended integration surface is the **Policy Gateway SDK**:
+
+| Step | API | Purpose |
+|------|-----|---------|
+| Session start | `AegisGatewayRuntime.ingress_gate(user_input)` | Budget, session ID, initial whitelist |
+| Before each tool | `egress_gate(NoesisActionRequest, ingress)` | Allow / reject / meltdown |
+| After approval | `_execute_physical_action(decision, registry)` | Run handler, return audit record |
+
+Conceptual governed node:
+
+```python
+from protocol_schema import NoesisActionRequest, ActionType, DecisionStatus
+from core_aegis.gateway_runtime import AegisGatewayRuntime
+
+aegis = AegisGatewayRuntime(default_tools=["query_db"])
+
+async def governed_tool_step(state: dict) -> dict:
+    request = NoesisActionRequest(
+        session_id=state["session_id"],
+        step_count=state["step"],
+        logical_entropy=state.get("drift", 0.0),
+        proposed_action=ActionType.TOOL_CALL,
+        action_payload={"tool_name": state["tool_name"], "parameters": state["params"]},
+        reasoning_trajectory=state["reasoning"],
+    )
+    decision = aegis.egress_gate(request, state["ingress"])
+    if decision.status != DecisionStatus.APPROVED:
+        return {"blocked": True, "reason": decision.penalty_log}
+    # dispatch via PhysicalToolRegistry only here
+    ...
+```
+
+LangGraph owns graph topology and checkpoints; ACOS owns the execution choke point.
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -180,7 +303,7 @@ Details: [docs/LICENSE.md](docs/LICENSE.md)
 ```bibtex
 @misc{acos_2026,
   author       = {He, Muchen},
-  title        = {{ACOS (AgentOS): Governed AI Agent Execution --- Reference Implementation}},
+  title        = {{ACOS (Aegis Cortex OS): Governed AI Agent Execution --- Reference Implementation}},
   year         = {2026},
   publisher    = {GitHub},
   url          = {https://github.com/FilthyMudblood/acos}
