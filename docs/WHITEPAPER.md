@@ -1,6 +1,6 @@
 # ACOS Whitepaper
 
-**Governed AI Agent Execution for Regulated and High-Stakes Workloads**
+**Aegis Cortex OS — Governed AI Agent Execution for Regulated and High-Stakes Workloads**
 
 | | |
 |---|---|
@@ -16,7 +16,7 @@ Enterprise AI agents are being deployed with the same privilege model as backend
 
 ### What ACOS is
 
-**ACOS is a governed execution boundary** — a deterministic policy layer between **intent** and **physical side effects**.
+**ACOS** (*Aegis Cortex OS*) is a **governed execution boundary** — a deterministic policy layer between **intent** and **physical side effects**.
 
 | Layer | What it is | In this repository |
 |-------|------------|-------------------|
@@ -26,7 +26,7 @@ Enterprise AI agents are being deployed with the same privilege model as backend
 
 The open-source repo ships a **reference runtime** to demonstrate the gateway. The long-term product is the **governance layer**, not another workflow engine.
 
-**One-line positioning:** *LangGraph orchestrates. ACOS authorizes.* ACOS does not replace orchestrators; it governs whether a proposed action may execute on real systems.
+**One-line positioning:** *LangGraph orchestrates. Aegis authorizes.* ACOS (Aegis Cortex OS) does not replace orchestrators; it governs whether a proposed action may execute on real systems.
 
 The language model may propose structured actions. It may not invoke tools, networks, or filesystems directly. Every proposal passes through the Policy Gateway, which maintains cross-step risk state and emits an explicit `APPROVED` / `REJECTED` / `HARD_MELTDOWN` decision before any physical side effect occurs.
 

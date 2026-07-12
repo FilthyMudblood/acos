@@ -1,16 +1,17 @@
-# ACOS (AgentOS)
+# ACOS — Aegis Cortex OS
 
-**A governed execution layer for AI agents — not a workflow engine.**
+**Governed execution layer for AI agents — not a workflow engine.**
 
-ACOS enforces one rule: **proposal ≠ execution**. The model outputs structured intents; a **Policy Gateway** arbitrates every proposal (budget, whitelist, cross-step risk); a **Runtime Executor** invokes tools only after `APPROVED`.
+**ACOS** (*Aegis Cortex OS*) enforces one rule: **proposal ≠ execution**. The model outputs structured intents; a **Policy Gateway** arbitrates every proposal (budget, whitelist, cross-step risk); a **Runtime Executor** invokes tools only after `APPROVED`.
 
 | | |
 |---|--|
+| **Name** | **ACOS** = Aegis Cortex OS |
 | **Essence** | Governed execution boundary |
 | **Core kernel** | Policy Gateway (ingress + egress + Risk Engine) |
 | **This repo** | Reference **runtime** that embeds the gateway to prove the contract |
 
-*LangGraph orchestrates. ACOS authorizes.*
+*LangGraph orchestrates. Aegis authorizes.*
 
 **Repository:** https://github.com/FilthyMudblood/acos
 
