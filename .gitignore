@@ -2,3 +2,6 @@
 .streamlit/secrets.toml
 .streamlit_local/secrets.toml
 .DS_Store
+
+# Zenodo release artifacts (local only — not published to GitHub)
+zenodo_release/
