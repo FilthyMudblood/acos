@@ -51,6 +51,7 @@ reason → propose intent → drift pre-scan → policy approve/reject → execu
 | Document | Description |
 |----------|-------------|
 | **[Whitepaper](docs/WHITEPAPER.md)** | Industry architecture, cross-step risk, LangGraph comparison (§12) |
+| **[Integration Guide](docs/integration_guide.md)** | Minimal public API; LangGraph insert vs standalone runtime |
 | **[Code Logic](docs/acos_logic_flow.md)** | Step-by-step runtime walkthrough |
 | **[Implementation Status](docs/implementation_status.md)** | Known gaps and contributor priorities |
 | [RFC draft — Zero-Trust Execution Contract](docs/aegis_ccb_zero_trust_execution_contract_rfc_draft.md) | Normative execution boundary |
@@ -104,7 +105,7 @@ LangGraph node (LLM / router)
     → result back into graph state
 ```
 
-Do **not** wire LangGraph `ToolNode` to call tools directly — that bypasses the gateway. A governed-tool node or thin SDK wrapper is required (integration guide: see [Whitepaper §12](docs/WHITEPAPER.md)).
+Do **not** wire LangGraph `ToolNode` to call tools directly — that bypasses the gateway. A governed-tool node or thin SDK wrapper is required (see [Integration Guide](docs/integration_guide.md) and [Whitepaper §12](docs/WHITEPAPER.md)).
 
 ### When ACOS is not the right fit
 
@@ -146,13 +147,13 @@ print(result["physical_gate_status"])  # policy outcome
 
 ### With LangGraph (integration pattern)
 
-ACOS does not ship a LangGraph adapter yet. The intended integration surface is the **Policy Gateway SDK**:
+ACOS does not ship a LangGraph adapter yet. Intended surface: **Policy Gateway SDK** (full contract: [Integration Guide](docs/integration_guide.md)):
 
 | Step | API | Purpose |
 |------|-----|---------|
 | Session start | `AegisGatewayRuntime.ingress_gate(user_input)` | Budget, session ID, initial whitelist |
 | Before each tool | `egress_gate(NoesisActionRequest, ingress)` | Allow / reject / meltdown |
-| After approval | `_execute_physical_action(decision, registry)` | Run handler, return audit record |
+| After approval | `execute_approved(decision, registry)` from `core_runtime.execute` | Run handler, return audit (fail-closed) |
 
 Conceptual governed node:
 
