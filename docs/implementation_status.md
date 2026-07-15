@@ -251,13 +251,13 @@ long retry loop boundary (rejected_count == 3)
 
 | Priority | Item |
 |----------|------|
-| P0 | **Gateway SDK façade** — `ingress` / `egress` / `execute_approved` public ([integration_guide.md](./integration_guide.md)); optional `make_tool_call_request` + packaging remain |
+| P0 | **Gateway SDK façade** — `ingress` / `egress` / `execute_approved` + intent helpers ([integration_guide.md](./integration_guide.md)); packaging (`from acos import …`) later |
 | P0 | Implement `OVERRIDE` semantics + ICU runtime enforcement |
 | P0 | Harden structured intent parsing (reject malformed, drop heuristics in prod path) |
 | P1 | Tests for every exit path and policy decision |
 | P1 | Secrets / `.gitignore` hygiene |
 | P2 | Configurable production tool connectors |
-| P2 | Official LangGraph governed-tool recipe (code sample under `examples/`) |
+| P2 | Optional first-party LangGraph adapter package (recipe [already shipped](../examples/langgraph_governed_tool.py)) |
 | P2 | Stronger drift/budget scoring |
 | P3 | Governed persistent memory |
 | P3 | Persistable session risk store (for multi-process / sidecar) |

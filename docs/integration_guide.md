@@ -95,24 +95,27 @@ async def execute_approved(
 3. Session risk is keyed by `session_id` and survives across steps until the host ends the session.
 4. Every deny / meltdown exposes a stable reason string (`penalty_log` / rejection taxonomy).
 
-### Suggested thin helpers (optional, not required for v0)
+### Thin helpers (implemented)
 
 ```python
-def make_tool_call_request(
-    *,
-    session_id: str,
-    step_count: int,
-    tool_name: str,
-    parameters: dict,
-    reasoning_trajectory: str,
-    logical_entropy: float = 0.0,
-) -> NoesisActionRequest:
-    """Build a TOOL_CALL intent without internal Noesis types."""
-    ...
+from core_runtime.intent_helpers import make_tool_call_request, is_executable
 
+request = make_tool_call_request(
+    session_id=ingress.session_id,
+    step_count=1,
+    tool_name="query_orders",
+    parameters={"order_id": "ORD-1"},
+    reasoning_trajectory="lookup order",
+)
+decision = aegis.egress_gate(request, ingress)
+if is_executable(decision):
+    result, audit = await execute_approved(decision, registry)
+```
 
-def is_executable(decision: AegisDecision) -> bool:
-    return decision.status == DecisionStatus.APPROVED
+Runnable LangGraph-style recipe (no `langgraph` package required for the default demo):
+
+```bash
+python examples/langgraph_governed_tool.py
 ```
 
 ---
@@ -140,27 +143,24 @@ session end
   → host decides END / human interrupt; ACOS does not own checkpointing
 ```
 
-**LangGraph sketch (conceptual):**
+**LangGraph sketch** (see [`examples/langgraph_governed_tool.py`](../examples/langgraph_governed_tool.py)):
 
 ```python
-# Not shipped as an adapter yet — pattern only.
 from core_runtime.execute import execute_approved
-from protocol_schema import ActionType, DecisionStatus, NoesisActionRequest
+from core_runtime.intent_helpers import is_executable, make_tool_call_request
+from protocol_schema import DecisionStatus
 
 async def governed_tool_node(state: dict) -> dict:
-    request = NoesisActionRequest(
+    request = make_tool_call_request(
         session_id=state["session_id"],
-        step_count=state["step"],
-        logical_entropy=float(state.get("logical_entropy", 0.0)),
-        proposed_action=ActionType.TOOL_CALL,
-        action_payload={
-            "tool_name": state["tool_name"],
-            "parameters": state.get("params") or {},
-        },
+        step_count=state["step"] + 1,
+        tool_name=state["tool_name"],
+        parameters=state.get("params") or {},
         reasoning_trajectory=state.get("reasoning") or "graph tool proposal",
+        logical_entropy=float(state.get("logical_entropy", 0.0)),
     )
     decision = state["aegis"].egress_gate(request, state["ingress"])
-    if decision.status != DecisionStatus.APPROVED:
+    if not is_executable(decision):
         return {
             "blocked": True,
             "physical_gate_status": decision.status.value,
@@ -217,9 +217,10 @@ This path **includes** proposer + vitals + loop. Prefer Path A when an orchestra
 | `ingress_gate` / `egress_gate` | Public on `AegisGatewayRuntime` | Done |
 | `execute_approved` | Public in `core_runtime/execute.py`; runtime uses it | Done |
 | Fail-closed on non-APPROVED execute | Enforced inside `execute_approved` | Done |
-| Intent helper without Noesis | Manual `NoesisActionRequest` | Optional `make_tool_call_request` |
+| Intent helper without Noesis | `make_tool_call_request` / `is_executable` in `core_runtime/intent_helpers.py` | Done |
+| LangGraph recipe | `examples/langgraph_governed_tool.py` | Done (optional `langgraph` compile helper) |
 | Package entry | Import deep modules | Eventually `from acos import …` (packaging later) |
-| Official LangGraph package | None | Recipe first; adapter optional |
+| Official LangGraph adapter package | None | Optional later |
 | Persist session risk | In-process dict | Host responsibility or future sidecar |
 
 ---

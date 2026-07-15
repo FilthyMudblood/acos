@@ -147,12 +147,13 @@ print(result["physical_gate_status"])  # policy outcome
 
 ### With LangGraph (integration pattern)
 
-ACOS does not ship a LangGraph adapter yet. Intended surface: **Policy Gateway SDK** (full contract: [Integration Guide](docs/integration_guide.md)):
+ACOS does not ship a first-party LangGraph adapter package. Intended surface: **Policy Gateway SDK** (full contract: [Integration Guide](docs/integration_guide.md); recipe: [`examples/langgraph_governed_tool.py`](examples/langgraph_governed_tool.py)):
 
 | Step | API | Purpose |
 |------|-----|---------|
 | Session start | `AegisGatewayRuntime.ingress_gate(user_input)` | Budget, session ID, initial whitelist |
-| Before each tool | `egress_gate(NoesisActionRequest, ingress)` | Allow / reject / meltdown |
+| Build intent | `make_tool_call_request(...)` from `core_runtime.intent_helpers` | Fill a TOOL_CALL request without Noesis types |
+| Before each tool | `egress_gate(request, ingress)` | Allow / reject / meltdown |
 | After approval | `execute_approved(decision, registry)` from `core_runtime.execute` | Run handler, return audit (fail-closed) |
 
 Conceptual governed node:
@@ -232,6 +233,7 @@ acos/
 ├── core_vitals/                # Drift monitor + budget circuit breaker
 ├── agentos_state/              # Session state and telemetry bus
 ├── backend/                    # Optional Supabase audit logger
+├── examples/                   # Integration recipes (LangGraph governed tool)
 ├── auto_test/                  # Tests and salami-slicing benchmark
 └── docs/
 ```
