@@ -43,7 +43,7 @@ flowchart TD
     RETRY -- "Yes" --> REJECT["Resolve rejected"]
     RETRY -- "No" --> LOOP
 
-    DECISION -- "APPROVED" --> EXEC["_execute_physical_action()"]
+    DECISION -- "APPROVED" --> EXEC["execute_approved()"]
     EXEC --> ACTION{"Executed action"}
     ACTION -- "TOOL_CALL" --> TOOL["PhysicalToolRegistry handler"]
     TOOL --> OBS["inject_observation()<br/>update phase state"]
@@ -186,7 +186,7 @@ Returns `AegisDecision` with status:
 
 ### 8. Tools Only Run After Approval
 
-If Aegis approves, the runtime executes via `_execute_physical_action()` (~line 199):
+If Aegis approves, the runtime executes via `execute_approved()` in [`core_runtime/execute.py`](../core_runtime/execute.py):
 
 - Tool lookup: [`PhysicalToolRegistry`](../core_runtime/runtime_stack.py)
 - Handler dispatch with fault isolation

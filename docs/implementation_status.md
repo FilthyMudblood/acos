@@ -91,7 +91,8 @@ Returns `AegisDecision`: `APPROVED`, `REJECTED`, `HARD_MELTDOWN`. `OVERRIDE` is 
 ### 6. Tool registry and execution
 
 - [`core_runtime/runtime_stack.py`](../core_runtime/runtime_stack.py) — `PhysicalToolRegistry`, `ToolSpec` (name, handler, capabilities, criticality_score, embedding)
-- [`agent_os_runtime.py`](../agent_os_runtime.py) — `_execute_physical_action()` after approval; structured tool audit (`input`, `output`, `error`, `decision`, `risk`)
+- [`core_runtime/execute.py`](../core_runtime/execute.py) — public `execute_approved()` after approval; structured tool audit (`input`, `output`, `error`, `decision`, `risk`)
+- [`agent_os_runtime.py`](../agent_os_runtime.py) — reference loop calls `execute_approved`
 
 ### 7. Vitals plane
 
@@ -250,13 +251,16 @@ long retry loop boundary (rejected_count == 3)
 
 | Priority | Item |
 |----------|------|
+| P0 | **Gateway SDK façade** — `ingress` / `egress` / `execute_approved` + intent helpers ([integration_guide.md](./integration_guide.md)); packaging (`from acos import …`) later |
 | P0 | Implement `OVERRIDE` semantics + ICU runtime enforcement |
 | P0 | Harden structured intent parsing (reject malformed, drop heuristics in prod path) |
 | P1 | Tests for every exit path and policy decision |
 | P1 | Secrets / `.gitignore` hygiene |
 | P2 | Configurable production tool connectors |
+| P2 | Optional first-party LangGraph adapter package (recipe [already shipped](../examples/langgraph_governed_tool.py)) |
 | P2 | Stronger drift/budget scoring |
 | P3 | Governed persistent memory |
+| P3 | Persistable session risk store (for multi-process / sidecar) |
 
 ---
 
@@ -271,5 +275,6 @@ Use this framing in papers, Zenodo, and sales-adjacent copy:
 ## Related Documents
 
 - [WHITEPAPER.md](./WHITEPAPER.md) — industry architecture
+- [integration_guide.md](./integration_guide.md) — minimal public API + LangGraph / standalone paths
 - [acos_logic_flow.md](./acos_logic_flow.md) — verified runtime walkthrough
 - [aegis_ccb_zero_trust_execution_contract_rfc_draft.md](./aegis_ccb_zero_trust_execution_contract_rfc_draft.md) — normative contract
