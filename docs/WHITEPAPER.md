@@ -86,17 +86,21 @@ ACOS enforces a three-role split:
 ┌─────────────┐     intent      ┌─────────────────┐    APPROVED only    ┌──────────────┐
 │   Intent    │ ──────────────► │  Policy Gateway │ ──────────────────► │   Runtime    │
 │  Proposer   │                 │  (Ingress/Egress)│                      │  Executor    │
-│   (LLM)     │ ◄── damping ─── │  + Risk Engine  │ ◄── observations ─── │  (tools)     │
-└─────────────┘                 └─────────────────┘                      └──────────────┘
-                                        ▲
-                                        │ drift + budget signals
-                                 ┌──────┴──────┐
-                                 │  Monitors   │
-                                 │ (side-channel)│
-                                 └─────────────┘
+│   (LLM)     │ ◄── damping ─── │  + Risk Engine  │ ◄── observations ─── │              │
+└─────────────┘                 └─────────────────┘                      └──────┬───────┘
+                                        ▲                                       │
+                                        │ drift + budget signals                ▼
+                                 ┌──────┴──────┐                     ┌──────────────────┐
+                                 │  Monitors   │                     │ Tool backends    │
+                                 │(side-channel)│                     │ (MCP, APIs, DB…) │
+                                 └─────────────┘                     └──────────────────┘
 ```
 
-**Non-negotiable rule:** the Runtime Executor is the only component that calls external tools. The LLM never receives a path around the gateway.
+**Non-negotiable rules:**
+
+1. The Runtime Executor is the **only** component that may invoke external tools or tool transports (including MCP).
+2. The Intent Proposer and Policy Gateway **must not** open MCP sessions, bind tools, or perform network/file side effects.
+3. Connecting an MCP server (or any tool backend) **in front of** the gateway — e.g. letting the model or an orchestrator call MCP directly — defeats the ACOS model.
 
 This is the same pattern as zero-trust service mesh: identity proposes, policy decides, dataplane executes.
 
@@ -157,6 +161,53 @@ Hard guards run before the equation: step budget, hijack flag, payload schema va
 **Budget Circuit Breaker** listens to per-step pulse telemetry (token usage, retry count, health index derivatives). It can terminate the session independently of the main loop if resource consumption accelerates unsafely or exceeds budget.
 
 Monitors do not replace egress—they provide parallel trip wires.
+
+### 3.7 Runtime Executor — sole physical dispatch
+
+After the Policy Gateway returns `APPROVED`, the **Runtime Executor** is the only path that may cause real side effects. It does **not** decide policy; it dispatches.
+
+**What the Executor does:**
+
+| Responsibility | Description |
+|----------------|-------------|
+| **Fail-closed gate** | Refuse any decision that is not strictly `APPROVED`; never invoke handlers on `REJECTED`, `HARD_MELTDOWN`, or `OVERRIDE` |
+| **Payload re-validation** | Re-check typed tool payload (`tool_name`, `parameters`) before dispatch |
+| **Tool registry lookup** | Resolve the handler from a `PhysicalToolRegistry` (name → async function / adapter) |
+| **Isolated invocation** | Call the handler with approved parameters; catch exceptions so a single tool fault does not crash the session |
+| **Result packaging** | Return a structured execution result (`ok`, tool output or error) |
+| **Execution audit** | Record tool name, inputs, outputs/errors, decision summary, and risk tags for telemetry |
+
+**What the Executor does *not* do:**
+
+- Reason about user goals (Intent Proposer)
+- Approve or veto intents (Policy Gateway)
+- Host MCP or other tool servers as an ungoverned side channel for the model
+
+Non-tool actions are handled without external I/O: e.g. `MEMORY_WRITE` / final-answer paths mark session resolve; `YIELD` / terminate paths produce no physical tool call.
+
+In the reference implementation, dispatch is centralized in a single entry (e.g. `execute_approved()`), so every physical call has one choke point.
+
+### 3.8 Tool backends and MCP — only behind the Executor
+
+**MCP (Model Context Protocol) servers, HTTP APIs, databases, and file adapters are tool backends.** They belong **behind** the Runtime Executor, not beside the LLM and not inside the Policy Gateway.
+
+```text
+Correct:
+  Intent → Gateway (APPROVED) → Executor → registry handler → MCP client → MCP server
+
+Incorrect (bypasses governance):
+  LLM / orchestrator ──direct──► MCP server
+  Gateway ──calls──► MCP (Gateway must not execute)
+```
+
+**Implications for integrators:**
+
+1. Register each MCP tool (or tool family) as a registry handler with `name`, `capabilities`, and `criticality_score`.
+2. The Gateway sees only the structured intent (`tool_name` + `parameters`); it does not speak MCP.
+3. The Executor opens the MCP (or other) connection **only after** `APPROVED`.
+4. Orchestrators (e.g. LangGraph) may route workflows, but **must not** wire unguarded MCP/`ToolNode` paths that skip the Gateway.
+
+This is a primary differentiator versus common agent stacks that bind MCP tools directly to the model or graph: **more MCP servers do not mean more model privilege** — privilege remains gated by Aegis, and only the Executor talks to MCP.
 
 ---
 
@@ -431,6 +482,7 @@ ACOS       = whether a proposed action may execute on real systems
 3. **Separated telemetry** — physical policy blocks are not confused with model refusals in chat text.
 4. **Deterministic egress hot path** — arbitration math is replayable without LLM calls in the decision path.
 5. **Tool criticality** — `criticality_score` feeds the Risk Engine; read vs act vs export are weighted differently.
+6. **MCP / tool transports behind the Executor** — MCP servers are backends after approval, not direct model bindings; connecting MCP does not grant the LLM ungoverned privilege (see §3.7–3.8).
 
 ### 12.5 Multi-agent scenarios
 
