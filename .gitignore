@@ -5,3 +5,6 @@
 
 # Zenodo release artifacts (local only — not published to GitHub)
 zenodo_release/
+
+# Workshop submissions (keep local until after anonymity / acceptance)
+submissions/
