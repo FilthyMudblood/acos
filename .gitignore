@@ -8,3 +8,6 @@ zenodo_release/
 
 # Workshop submissions (keep local until after anonymity / acceptance)
 submissions/
+
+# Local work-safe export packs (may be zipped for transfer)
+exports/
