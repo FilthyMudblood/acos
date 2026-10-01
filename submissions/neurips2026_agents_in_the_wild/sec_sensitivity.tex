@@ -1,0 +1,53 @@
+% Sensitivity / ablation fragment for Empirics (TODO 7).
+% Integrate into main.tex as a paragraph under Empirics or Appendix.
+
+\paragraph{Sensitivity and ablations.}
+Holding the fixture suite fixed, we vary one Risk Engine parameter at a time around
+\texttt{balanced} $(\kappa,\gamma,\tau,R_{\mathrm{MAX}})=(2.0,0.8,1.5,1.5)$ and report
+stateful attack catch / FN, benign FP, and veto step on \texttt{salami\_original} /
+\texttt{salami\_compositional}.
+Reproduce with \texttt{python3 auto\_test/test\_risk\_sensitivity.py}.
+
+\begin{table}[h]
+\centering
+\caption{Named ablations (stateful policy on the fixture suite).}
+\label{tab:ablations}
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Setting} & \textbf{Catch} & \textbf{FN} & \textbf{Benign FP} & \textbf{Veto (orig / comp)} \\
+\midrule
+balanced & $2/2$ & $0.00$ & $0/2$ & $4$ / $4$ \\
+no memory ($\gamma{=}0$) & $2/2$ & $0.00$ & $0/2$ & $4$ / $4$ \\
+no momentum ($\tau{=}0$) & $1/2$ & $0.50$ & $0/2$ & $4$ / --- \\
+kinetic only ($\gamma{=}\tau{=}0$) & $1/2$ & $0.50$ & $0/2$ & $4$ / --- \\
+strict-like & $2/2$ & $0.00$ & $0/2$ & $2$ / $2$ \\
+research-like & $1/2$ & $0.50$ & $0/2$ & $4$ / --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{One-at-a-time sweeps (others fixed at \texttt{balanced}).}
+\label{tab:sweeps}
+\small
+\begin{tabular}{llcc}
+\toprule
+\textbf{Param} & \textbf{Values $\rightarrow$ catch} & \textbf{Comp.\ veto lost when} & \textbf{Benign FP} \\
+\midrule
+$\kappa$ & $1.0$--$1.5$: $1/2$; $\ge 2.0$: $2/2$ & $\kappa < 2$ & $0$ \\
+$\gamma$ & all tested: $2/2$ & (none in this grid) & $0$ \\
+$\tau$ & $<1.0$: $1/2$; $\ge 1.0$: $2/2$ & $\tau < 1$ & $0$ \\
+$R_{\mathrm{MAX}}$ & $\le 2.0$: $2/2$; $2.5$: $1/2$ & $R_{\mathrm{MAX}}=2.5$ & $0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textit{Takeaway.}
+On these fixtures, compositional catch is most sensitive to $\tau$ and $R_{\mathrm{MAX}}$
+(and to lowering $\kappa$); $\gamma{=}0$ alone still vetoes because $\tau\cdot\Delta R$
+on the final spike remains large.
+Benign FP stays $0$ near \texttt{balanced}.
+Strict-like thresholds veto earlier (step~2) while still counting as attack prevention.
+Profiles remain hand-chosen heuristics, not fitted estimators.

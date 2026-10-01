@@ -28,6 +28,18 @@ Use this file for long-lived technical decisions (ADR-lite style).
 
 ---
 
+- ID: DEC-20261001-01
+- Title: MCP and FS connectors live behind Executor only (L1 sketch)
+- Status: accepted
+- Context: Workshop revision asked for beyond-mock realism without claiming L2 isolation.
+- Decision: Ship `core_runtime/connectors/` (read-only FS + MCP-shaped backend) registered via `PhysicalToolRegistry` and invoked only through `execute_approved`. Paper and tests must state L1 honesty limits.
+- Alternatives considered: Full MCP JSON-RPC client; ungoverned demo MCP beside the LLM.
+- Consequences: Clear placement demos and tests; no production MCP interoperability claim.
+- Rollback plan: Remove connectors package if product surface shrinks to Gateway-only.
+- References: `docs/neurips_revision_checklist.md`, `examples/sandbox_mcp_behind_executor.py`
+
+---
+
 - ID: DEC-20260714-01
 - Title: Product surface is Policy Gateway SDK; runtime is reference packaging
 - Status: accepted

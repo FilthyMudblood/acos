@@ -1,0 +1,423 @@
+\documentclass{article}
+
+% NeurIPS 2026 style (loads natbib by default).
+\usepackage{neurips_2026}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\title{ACOS: Governed Execution for Agents in the Wild\\
+\large Policy Gateway, Runtime Executor, and MCP Behind the Boundary}
+
+\author{
+  Anonymous Authors\\
+  NeurIPS 2026 Workshop: Agents in the Wild\\
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Tool-using agents inherit backend privilege: a single prompt injection or
+salami-sliced trajectory can turn probabilistic text into irreversible side
+effects. We present \textbf{ACOS} (Aegis Cortex OS), a governed execution
+boundary that separates \emph{intent proposal} from \emph{physical execution}.
+A deterministic \textbf{Policy Gateway} maintains cross-step risk state and
+emits explicit \texttt{APPROVED}/\texttt{REJECTED} decisions; a
+\textbf{Runtime Executor} is the sole component allowed to invoke tool
+backends---including MCP---and only after approval. We state a concrete
+threat model and L1 guarantees, make Risk Engine profiles and fixture signals
+reproducible, compare stateful vs.\ stateless vs.\ hard-guard baselines on
+salami and public-bench-\emph{proxy} trajectories, and report sensitivity
+ablations. Beyond mocks, we ship a read-only filesystem connector and an
+MCP-behind-Executor sketch with honest L1 limits. ACOS complements
+orchestrators (e.g., LangGraph): it authorizes execution rather than routing
+workflows.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+Most agent stacks still follow
+\[
+\text{user} \rightarrow \text{LLM} \rightarrow \text{tool call} \rightarrow \text{API/DB/FS}.
+\]
+Security is then layered on with prompts, filters, or post-hoc review. That
+design fails under prompt injection, gradual privilege escalation
+(``salami-slicing''), runaway loops, and audit ambiguity between ``model
+refused'' and ``policy blocked.''
+
+\textbf{ACOS} enforces \emph{proposal $\neq$ execution}:
+\begin{enumerate}
+  \item \textbf{Intent Proposer} (LLM) emits structured intents only
+        (\texttt{tool\_call}, \texttt{final\_answer}, \texttt{terminate}).
+  \item \textbf{Policy Gateway} arbitrates with ingress budgets, whitelist /
+        schema guards, and a stateful Risk Engine.
+  \item \textbf{Runtime Executor} dispatches to a tool registry
+        \emph{only} on \texttt{APPROVED}.
+\end{enumerate}
+Tool transports such as the Model Context Protocol (MCP)~\citep{mcp2024}
+belong \emph{behind} the Executor, not beside the model. Positioning:
+\emph{LangGraph orchestrates; Aegis authorizes}~\citep{langgraph,acos2026}.
+
+This workshop revision addresses reviewer and OpenReview-style requests for
+related-work placement, an explicit threat model, reproducible Risk Engine
+definitions, empirical baselines (including public-bench proxies),
+beyond-mock connectors, and sensitivity analysis (revision TODOs~1--7;
+checklist in the companion artifact).
+
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Dual LLM / CaMeL and privilege separation.}
+Dual-LLM and CaMeL-style designs reduce blast radius by separating privileged
+and unprivileged model contexts, or by constraining how untrusted content
+flows into tool arguments~\citep{camel2024}. ACOS is complementary: it does
+not claim to solve prompt understanding; it places a deterministic
+authorize/execute cut after intent formation. Even a dual-LLM proposal must
+still face an execution boundary if tools can cause irreversible effects.
+Where Dual LLM/CaMeL primarily reshape \emph{information flow into the model},
+ACOS reshapes \emph{authority flow out of the model}.
+
+\paragraph{Policy gateways, sandboxes, and orchestrators.}
+IAM gateways, syscall sandboxes, WASM/containers, and agent orchestrators
+(e.g., LangGraph~\citep{langgraph}) and MCP tool hosts~\citep{mcp2024} each
+address part of the problem. Orchestrators excel at routing and state
+machines; OS sandboxes constrain process capability; many ``guardrails''
+score a single step. ACOS's novelty is the combination of (i)~an explicit
+proposal/gateway/executor \emph{execution boundary}, (ii)~\emph{cross-step}
+risk state that catches compositional escalation, and (iii)~\emph{MCP (and
+other backends) placed behind the Executor} so adding servers does not
+automatically enlarge model privilege.
+
+\paragraph{State overlap vs.\ novelty.}
+Static allowlists, schema validators, and per-step criticality scores overlap
+with ACOS hard guards---intentionally. The Risk Engine targets graded,
+temporal threats those guards miss: each step may look locally safe while
+session risk accumulates. We do not claim uniqueness for fail-closed
+dispatch alone; the contribution is the governed boundary plus reproducible
+cross-step arbitration under an explicit L1 threat model.
+
+\section{Threat Model}
+\label{sec:threat}
+
+\paragraph{Attacker capabilities (in scope).}
+We assume an adversary who can (a)~inject or manipulate natural-language
+content observed by the proposer (prompt injection, untrusted tools/docs),
+(b)~steer multi-step trajectories where each individual tool call looks
+locally plausible (salami-slicing), and (c)~attempt data exfiltration or
+high-criticality actions (export, refund, external send) via registered
+tools. The attacker does \emph{not} need to break cryptography; success is
+inducing an \texttt{APPROVED} physical side effect that violates policy.
+
+\paragraph{Out of scope.}
+Kernel exploits, stolen host credentials outside the agent path, supply-chain
+compromise of the Gateway binary, and covert channels that bypass the
+registry entirely are out of scope for L1. Physical process/network isolation
+is an L2/L3 deployment concern (Section~\ref{sec:limits}).
+
+\paragraph{L1 guarantees.}
+Given a correct host integration (no unguarded tool path):
+\begin{itemize}
+  \item No registry handler runs unless the Gateway returns
+        \texttt{APPROVED} (fail-closed Executor).
+  \item Egress arbitration is deterministic given $(D_t,E_t,C_T)$ and session
+        risk state (replayable).
+  \item Cross-step accumulation can veto compositional salami trajectories
+        that per-step kinetic checks miss (Section~\ref{sec:empirics}).
+  \item Denies expose structured reasons
+        (\texttt{physical\_gate\_status}, \texttt{termination\_cause})
+        distinct from model text.
+\end{itemize}
+
+\paragraph{Non-guarantees (honest).}
+L1 does \emph{not} guarantee: OS-level confinement of a compromised proposer
+process; calibrated probabilities from hand-chosen $(\kappa,\gamma,\tau,R_{\max})$;
+completeness against novel injection that never proposes a tool call; or
+official Attack Success Rate on AgentDojo/InjecAgent suites (we report
+policy-layer proxies only; Section~\ref{sec:proxy}).
+
+\section{System Design}
+\label{sec:system}
+
+\begin{figure}[t]
+\centering
+\small
+\begin{verbatim}
+Intent Proposer --intent--> Policy Gateway --APPROVED only--> Runtime Executor
+                                   ^                              |
+                                   | risk state                   v
+                              Drift / Budget                 Tool backends
+                                 monitors                 (FS, API, MCP,...)
+\end{verbatim}
+\caption{ACOS L1 boundary. MCP and other backends sit behind the Executor.}
+\label{fig:arch}
+\end{figure}
+
+\paragraph{Ingress.}
+On each user request the Gateway issues a session ID, allocates token/step
+budget, runs an ingress threat seed, and initializes a tool whitelist (empty
+if hijack is flagged).
+
+\paragraph{Per-step sandbox.}
+Before each proposer step the reference runtime may re-prune the reachable
+tool surface using phase locks and drift signals. Whitelists are not
+necessarily static for the session lifetime.
+
+\paragraph{Egress.}
+Hard guards (budget, hijack flag, schema, whitelist) run first, then the Risk
+Engine (Section~\ref{sec:risk}). Decisions:
+\texttt{APPROVED}, \texttt{REJECTED}, \texttt{HARD\_MELTDOWN}.
+\texttt{OVERRIDE} is schema-reserved and non-auto-executable.
+
+\paragraph{Executor.}
+\texttt{execute\_approved} re-validates payloads, looks up
+\texttt{PhysicalToolRegistry}, invokes handlers, and audits outcomes.
+Non-approved statuses never call tools~\citep{acos2026}.
+
+\paragraph{MCP placement.}
+Correct: Intent $\rightarrow$ Gateway $\rightarrow$ Executor $\rightarrow$
+registry handler $\rightarrow$ MCP client. Incorrect: LLM/orchestrator
+direct to MCP; Gateway must not open MCP sessions. Integrators register each
+MCP tool (or family) as a handler with \texttt{criticality\_score}; the
+Gateway sees only structured intents.
+
+\paragraph{Integration surface.}
+Path~A (recommended): host orchestrators call \texttt{ingress\_gate} /
+\texttt{egress\_gate} / \texttt{execute\_approved}. Path~B: the reference
+loop \texttt{run\_agent\_os\_once()} packages the full contract for demos.
+LangGraph stock \texttt{ToolNode} paths that skip the Gateway defeat the
+model.
+
+\section{Risk Engine}
+\label{sec:risk}
+
+Normalized inputs $D_t,E_t,C_T \in [0,1]$:
+\begin{itemize}
+  \item $D_t$: goal-drift score (monitor-derived),
+  \item $E_t$: logical-entropy / instability score,
+  \item $C_T$: tool criticality (read $\ll$ export/act).
+\end{itemize}
+Profiles $(\kappa,\gamma,\tau,R_{\max})$ are \textbf{hand-chosen heuristics},
+not fitted estimators. Named profiles in the reference benchmark:
+\begin{center}
+\small
+\begin{tabular}{lcccc}
+\toprule
+Profile & $\kappa$ & $\gamma$ & $\tau$ & $R_{\max}$ \\
+\midrule
+\texttt{strict} & $4.0$ & $0.8$ & $1.5$ & $1.0$ \\
+\texttt{balanced} & $2.0$ & $0.8$ & $1.5$ & $1.5$ \\
+\texttt{research} & $1.5$ & $0.75$ & $1.2$ & $2.5$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Equations (reproduced in Appendix~\ref{app:risk}):
+\[
+\begin{aligned}
+R_{\mathrm{kinetic}}(t)
+  &= C_T\bigl(\exp(\min(\kappa D_t E_t,10))-1\bigr),\\
+R_{\mathrm{potential}}(t)
+  &= \gamma R_{\mathrm{potential}}(t-1) + R_{\mathrm{kinetic}}(t),\\
+\Delta R(t)
+  &= \max\bigl(0, R_{\mathrm{kinetic}}(t)-R_{\mathrm{kinetic}}(t-1)\bigr),\\
+R_{\mathrm{eff}}(t)
+  &= R_{\mathrm{potential}}(t) + \tau\Delta R(t).
+\end{aligned}
+\]
+Veto if $R_{\mathrm{eff}}(t)\ge R_{\max}$. Reproduction:
+\texttt{auto\_test/test\_salami\_slicing\_benchmark.py},
+\texttt{test\_risk\_policy\_baselines.py}.
+
+\section{Empirics}
+\label{sec:empirics}
+
+\subsection{Baselines on salami fixtures}
+\label{sec:baselines}
+
+Policies: \textbf{stateful} (full equation);
+\textbf{stateless\_kinetic} ($R_{\mathrm{eff}}=R_{\mathrm{kinetic}}$ only);
+\textbf{hardguard\_only} (always approve at the risk layer---allowlist/schema
+without graded risk).
+Trajectories: \texttt{salami\_original} (HR$\rightarrow$VP$\rightarrow$CEO$\rightarrow$external email),
+\texttt{salami\_compositional} (moderate final spike so kinetic-only may miss),
+plus two benign reads.
+Under \texttt{balanced}, Table~\ref{tab:baselines} shows stateful $2/2$
+attack catch, stateless $1/2$ (misses compositional), hardguard $0/2$;
+benign FP $=0$ for risk-aware policies. On \texttt{salami\_original},
+\texttt{balanced} vetoes at step~4; \texttt{strict} at step~2.
+
+\begin{table}[t]
+\centering
+\caption{Fixture suite FP/FN summary (\texttt{balanced}). Attack catch counts
+over two salami trajectories; FN $=1-\mathrm{catch}$.}
+\label{tab:baselines}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Policy} & \textbf{Attack catch} & \textbf{FN} & \textbf{Benign FP} \\
+\midrule
+stateful & $2/2$ & $0.00$ & $0/2$ \\
+stateless\_kinetic & $1/2$ & $0.50$ & $0/2$ \\
+hardguard\_only & $0/2$ & $1.00$ & $0/2$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Public-bench proxy (AgentDojo / InjecAgent themes)}
+\label{sec:proxy}
+
+We evaluate \emph{policy-layer} trajectories inspired by
+AgentDojo~\citep{agentdojo2024} and InjecAgent~\citep{injecagent2024} themes
+(injection$\rightarrow$escalate$\rightarrow$exfil / tool misuse), including
+compositional finals.
+\textbf{Disclaimer:} this is \textbf{not} official suite ASR; we do not run
+the published harnesses. Historically the AgentDojo Python package required
+Python~$\ge 3.10$; our proxy uses stdlib unittest without that dependency.
+Signals $(D_t,E_t,C_T)$ are hand-labeled to mirror attack shapes---not scraped
+from benchmark logs. On \texttt{balanced}, stateful catches \textbf{$4/4$}
+attacks with $0/2$ benign FP; stateless $2/4$; hardguard $0/4$
+(\texttt{auto\_test/test\_public\_bench\_proxy.py}).
+
+\begin{table}[t]
+\centering
+\caption{Public-bench \emph{proxy} catch rates (not official ASR).}
+\label{tab:proxy}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Policy} & \textbf{Attack catch} & \textbf{FN} & \textbf{Benign FP} \\
+\midrule
+stateful & $4/4$ & $0.00$ & $0/2$ \\
+stateless\_kinetic & $2/4$ & $0.50$ & $0/2$ \\
+hardguard\_only & $0/4$ & $1.00$ & $0/2$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Sensitivity}
+\label{sec:sensitivity}
+\input{sec_sensitivity}
+
+\section{Beyond Mocks}
+\label{sec:beyond}
+
+\paragraph{Read-only filesystem connector.}
+\texttt{core\_runtime/connectors/readonly\_fs.py} resolves paths under an
+explicit root, rejects \texttt{..} / absolute escape, forbids writes, and
+exposes async handlers for registry registration. Unit tests verify
+\texttt{execute\_approved} is required for I/O
+(\texttt{auto\_test/test\_connectors\_realism.py}).
+
+\paragraph{MCP-behind-Executor sketch.}
+\texttt{core\_runtime/connectors/mcp\_backend.py} and
+\texttt{examples/sandbox\_mcp\_behind\_executor.py} demonstrate the correct
+wiring: Gateway never speaks MCP; Executor-dispatched proxies call an
+in-process MCP-shaped catalog. This is an L1 sketch (no full JSON-RPC/stdio
+transport by default, no L2 isolation). Compromised in-process proposers
+remain an L1 limit; L2+ adds proxy/mount/syscall controls
+(Section~\ref{sec:limits}).
+
+\paragraph{What ``beyond mocks'' does and does not claim.}
+We claim real filesystem reads under a chroot-like root and a faithful
+\emph{placement} sketch for MCP. We do \emph{not} claim production MCP
+interoperability, audited connectors, or enclave isolation.
+
+\section{Limitations and Conformance}
+\label{sec:limits}
+
+Conformance levels: \textbf{L0} screening only; \textbf{L1} (this repo)
+Proposer/Gateway/Executor boundary with deterministic egress;
+\textbf{L2} infrastructure bypass controls; \textbf{L3} memory/process
+isolation. Known L1 gaps include physical isolation, unfinished
+\texttt{OVERRIDE}/ICU behavior, regex ingress limits, and demo-grade
+connectors. Treat ACOS as a reference architecture and evaluation harness,
+not a certified appliance. No third-party security audit is claimed.
+
+\section{Conclusion}
+ACOS argues that agents in the wild need an authorize/execute boundary with
+cross-step risk and backends (including MCP) behind the Executor. We answered
+review concerns with an explicit threat model, reproducible equations and
+profiles, baseline/proxy empirics, sensitivity tables, and honest beyond-mock
+connectors. Future work: L2 isolation, calibrated risk estimators, and
+official public-bench harness integration under the same Gateway cut.
+
+\begin{ack}
+Anonymous workshop revision. Companion checklist maps OpenReview concerns to
+sections and code artifacts. Reference implementation available in the ACOS
+repository (anonymize for double-blind review as needed).
+\end{ack}
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\appendix
+
+\section{Risk equation details}
+\label{app:risk}
+
+\paragraph{Full recurrence.}
+Let $R_{\mathrm{potential}}(0)=0$ and $R_{\mathrm{kinetic}}(0)=0$. For each
+step $t\ge 1$ with signals $(D_t,E_t,C_T)$:
+\begin{align}
+R_{\mathrm{kinetic}}(t)
+  &= C_T\bigl(\exp(\min(\kappa D_t E_t,10))-1\bigr),\\
+R_{\mathrm{potential}}(t)
+  &= \gamma R_{\mathrm{potential}}(t-1) + R_{\mathrm{kinetic}}(t),\\
+\Delta R(t)
+  &= \max\bigl(0, R_{\mathrm{kinetic}}(t)-R_{\mathrm{kinetic}}(t-1)\bigr),\\
+R_{\mathrm{eff}}(t)
+  &= R_{\mathrm{potential}}(t) + \tau\Delta R(t).
+\end{align}
+Decision: \texttt{APPROVED} iff $R_{\mathrm{eff}}(t)<R_{\max}$ after hard
+guards pass; else \texttt{REJECTED} (or \texttt{HARD\_MELTDOWN} for metabolic
+trips).
+
+\paragraph{Numerical safety.}
+Exponent inputs are clamped with $\min(\kappa D_t E_t, 10)$. Non-finite
+arithmetic must fail closed. Hard guards precede the equation (step budget,
+hijack, schema, whitelist).
+
+\paragraph{Signal definitions (operational).}
+In the reference runtime, $D_t$ and $E_t$ are produced by drift/entropy
+monitors over reasoning and payload features; $C_T$ comes from
+\texttt{ToolSpec.criticality\_score}. Fixture benchmarks inject explicit
+scalars so arbitration is bit-reproducible without LLM sampling.
+
+\paragraph{Salami fixture signals (balanced veto at step 4).}
+\texttt{salami\_original}: $(D_t,E_t,C_T)$ sequence
+$(0.05,0.10,0.50)$, $(0.60,0.30,0.50)$, $(0.65,0.30,0.50)$,
+$(0.90,0.80,0.90)$. Compositional replaces the final spike with
+$(0.70,0.55,0.70)$ so kinetic-only stays under $R_{\max}$ while stateful
+crosses it.
+
+\paragraph{Reproduction commands.}
+\begin{verbatim}
+python3 auto_test/test_salami_slicing_benchmark.py
+python3 auto_test/test_risk_policy_baselines.py
+python3 auto_test/test_risk_sensitivity.py
+python3 auto_test/test_public_bench_proxy.py
+python3 -m unittest auto_test.test_connectors_realism -v
+python3 examples/sandbox_mcp_behind_executor.py
+\end{verbatim}
+
+\section{Extended sensitivity notes}
+\label{app:sens}
+See also \texttt{docs/risk\_sensitivity.md}. Sweep highlights on the fixture
+suite: $\kappa<2$ or $\tau<1$ or $R_{\max}=2.5$ can miss compositional;
+$\gamma=0$ alone still vetoes via $\tau\Delta R$ on the final spike; benign
+FP stays $0$ near balanced for $\kappa\in\{1.5,2,3\}$. Strict-like thresholds
+veto earlier (step~2) while still counting as attack prevention. Profiles
+remain hand-chosen heuristics, not fitted estimators.
+
+\end{document}
