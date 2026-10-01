@@ -46,3 +46,4 @@ tectonic main.tex   # or pdflatex + bibtex
 - [x] TODO 5 Public-bench proxy + disclaimer
 - [x] TODO 6 Beyond mocks (FS + MCP sketch)
 - [x] TODO 7 Sensitivity (`sec_sensitivity.tex` / `docs/risk_sensitivity.md`)
+- [x] TODO 8 Paper pass: `main.tex` + `main.pdf` (6pp) integrated; this checklist verified against claims
