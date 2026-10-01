@@ -55,8 +55,37 @@ reason → propose intent → drift pre-scan → policy approve/reject → execu
 | **[Code Logic](docs/acos_logic_flow.md)** | Step-by-step runtime walkthrough |
 | **[Implementation Status](docs/implementation_status.md)** | Known gaps and contributor priorities |
 | [RFC draft — Zero-Trust Execution Contract](docs/aegis_ccb_zero_trust_execution_contract_rfc_draft.md) | Normative execution boundary |
+| [NeurIPS revision checklist](docs/neurips_revision_checklist.md) | Reviewer concerns → paper sections + code |
+| [Risk sensitivity notes](docs/risk_sensitivity.md) | κ / γ / τ / R_MAX sweeps and ablations |
+| [Workshop paper draft](submissions/neurips2026_agents_in_the_wild/main.pdf) | Agents in the Wild revision (PDF) |
 | [Open Source Release](docs/OPEN_SOURCE_RELEASE.md) | Scope, licensing, commercial boundary |
 | [Security Policy](SECURITY.md) | Vulnerability reporting |
+
+---
+
+## Recent additions (NeurIPS revision)
+
+Workshop-oriented hardening of the reference stack and paper. Summary of what landed:
+
+### Paper and docs
+- Rebuilt workshop draft: Related Work, Threat Model, reproducible Risk Engine, empirics, sensitivity, beyond-mocks, limitations (`submissions/neurips2026_agents_in_the_wild/`)
+- Reviewer checklist mapping OpenReview concerns to sections and artifacts (`docs/neurips_revision_checklist.md`)
+
+### Evaluation (deterministic policy-layer fixtures)
+| Suite | What it shows | Run |
+|-------|---------------|-----|
+| Salami baselines | stateful **2/2** vs stateless **1/2** vs hardguard **0/2**; benign FP **0** | `python3 auto_test/test_risk_policy_baselines.py` |
+| Public-bench *proxy* | AgentDojo/InjecAgent **motifs** only (not official ASR); stateful **4/4** | `python3 auto_test/test_public_bench_proxy.py` |
+| Sensitivity | one-at-a-time κ/γ/τ/R_MAX; compositional catch most sensitive to **τ** and **R_MAX** | `python3 auto_test/test_risk_sensitivity.py` |
+
+### Beyond mocks (L1 connectors)
+- Path-jailed **read-only filesystem** + **MCP-behind-Executor** sketch (`core_runtime/connectors/`)
+- Demo: `python3 examples/sandbox_mcp_behind_executor.py`
+- Honest limits: still L1 (not syscall/network isolation); MCP sketch does not pin a production SDK
+
+### SDK / pack (same branch)
+- Public `execute_approved` + intent helpers + LangGraph recipe
+- Work-safe harness pack: `packs/acos_work_harness_safe/`
 
 ---
 
@@ -230,11 +259,14 @@ acos/
 ├── core_aegis/                 # Policy Gateway (ingress + egress)
 ├── core_noesis/                # Intent Proposer (LLM step + intent adapter)
 ├── core_runtime/               # Tool registry, phases, sandbox pruning
+│   └── connectors/             # Read-only FS + MCP-behind-Executor sketches
 ├── core_vitals/                # Drift monitor + budget circuit breaker
 ├── agentos_state/              # Session state and telemetry bus
 ├── backend/                    # Optional Supabase audit logger
-├── examples/                   # Integration recipes (LangGraph governed tool)
-├── auto_test/                  # Tests and salami-slicing benchmark
+├── examples/                   # LangGraph recipe + sandbox/MCP demo
+├── auto_test/                  # Baselines, sensitivity, proxy, connectors
+├── packs/acos_work_harness_safe/  # Work-safe gateway-only harness pack
+├── submissions/neurips2026_agents_in_the_wild/  # Workshop paper draft + PDF
 └── docs/
 ```
 
@@ -268,10 +300,14 @@ Runtime flags (`run_agent_os_once()` / Streamlit sidebar):
 ```bash
 python3 auto_test/run_all.py
 python3 auto_test/test_salami_slicing_benchmark.py
+python3 auto_test/test_risk_policy_baselines.py
+python3 auto_test/test_risk_sensitivity.py
+python3 auto_test/test_public_bench_proxy.py
+python3 -m unittest auto_test.test_connectors_realism -v
 python3 scripts/check_aegis_core_sovereignty.py
 ```
 
-The salami-slicing benchmark demonstrates cross-step risk accumulation: individually low-risk steps can be vetoed when session risk exceeds the configured threshold.
+The salami / baseline suites demonstrate cross-step risk accumulation and FP/FN against stateless and hard-guard policies. The public-bench proxy is motif-based (not official AgentDojo ASR). See [NeurIPS revision checklist](docs/neurips_revision_checklist.md).
 
 ---
 
