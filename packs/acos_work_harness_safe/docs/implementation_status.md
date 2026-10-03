@@ -2,9 +2,9 @@
 
 > **Purpose:** Cursor context, contributor onboarding, and honest gap tracking.  
 > **Audience:** Engineers extending the reference implementation.  
-> **Last aligned with:** workshop revision sync (2026-10); whitepaper v1.1.
+> **Last aligned with:** codebase review (2026-07).
 
-For industry-facing framing, see [WHITEPAPER.md](./WHITEPAPER.md) (threat model, empirics, Dual-LLM comparison). For step-by-step runtime flow, see [acos_logic_flow.md](./acos_logic_flow.md). Empirics checklist: [neurips_revision_checklist.md](./neurips_revision_checklist.md).
+For industry-facing framing, see [WHITEPAPER.md](./WHITEPAPER.md). For step-by-step runtime flow, see [acos_logic_flow.md](./acos_logic_flow.md).
 
 ---
 

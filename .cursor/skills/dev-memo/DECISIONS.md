@@ -28,6 +28,43 @@ Use this file for long-lived technical decisions (ADR-lite style).
 
 ---
 
+- ID: DEC-20261001-01
+- Title: MCP and FS connectors live behind Executor only (L1 sketch)
+- Status: accepted
+- Context: Workshop revision asked for beyond-mock realism without claiming L2 isolation.
+- Decision: Ship `core_runtime/connectors/` (read-only FS + MCP-shaped backend) registered via `PhysicalToolRegistry` and invoked only through `execute_approved`. Paper and tests must state L1 honesty limits.
+- Alternatives considered: Full MCP JSON-RPC client; ungoverned demo MCP beside the LLM.
+- Consequences: Clear placement demos and tests; no production MCP interoperability claim.
+- Rollback plan: Remove connectors package if product surface shrinks to Gateway-only.
+- References: `docs/neurips_revision_checklist.md`, `examples/sandbox_mcp_behind_executor.py`
+
+---
+
+- ID: DEC-20260714-01
+- Title: Product surface is Policy Gateway SDK; runtime is reference packaging
+- Status: accepted
+- Context:
+  - Integrating ACOS via `run_agent_os_once()` forces a second orchestrator alongside LangGraph.
+  - Differentiation is authorize/audit/execute, not graph routing.
+- Decision:
+  - Public integrator surface is `ingress_gate` / `egress_gate` / `execute_approved` (+ protocol types + `PhysicalToolRegistry`).
+  - `run_agent_os_once()` remains the reference loop (Path B), not the default embedding API (Path A).
+  - Spec lives in `docs/integration_guide.md`; public `execute_approved` lives in `core_runtime/execute.py` (fail-closed on non-APPROVED).
+- Alternatives considered:
+  - Ship only standalone runtime and ask users to fork the loop.
+  - Build a full LangGraph-compatible framework inside ACOS.
+- Consequences:
+  - Clear ownership vs LangGraph; smaller public API; reference runtime can thin over time.
+  - Temporary dual call paths until execute is extracted.
+- Rollback plan:
+  - Keep private dispatcher; document Path B only if Path A adoption fails.
+- References:
+  - docs/integration_guide.md
+  - docs/WHITEPAPER.md §12
+  - core_aegis/gateway_runtime.py
+
+---
+
 - ID: DEC-20260430-02
 - Title: Retire heuristic egress stack; enforce equation-only arbitration
 - Status: accepted
