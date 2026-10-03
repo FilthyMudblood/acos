@@ -69,6 +69,7 @@ Workshop-oriented hardening of the reference stack and paper. Summary of what la
 
 ### Paper and docs
 - Rebuilt workshop draft: Related Work, Threat Model, reproducible Risk Engine, empirics, sensitivity, beyond-mocks, limitations (`submissions/neurips2026_agents_in_the_wild/`)
+- **Whitepaper v1.1** synced with the same threat model, baselines/proxy/sensitivity numbers, Dual-LLM positioning, and L1 connectors (`docs/WHITEPAPER.md`)
 - Reviewer checklist mapping OpenReview concerns to sections and artifacts (`docs/neurips_revision_checklist.md`)
 
 ### Evaluation (deterministic policy-layer fixtures)
@@ -134,7 +135,7 @@ LangGraph node (LLM / router)
     → result back into graph state
 ```
 
-Do **not** wire LangGraph `ToolNode` to call tools directly — that bypasses the gateway. A governed-tool node or thin SDK wrapper is required (see [Integration Guide](../docs/integration_guide.md) and [Whitepaper §12](../docs/WHITEPAPER.md)).
+Do **not** wire LangGraph `ToolNode` to call tools directly — that bypasses the gateway. A governed-tool node or thin SDK wrapper is required (see [Integration Guide](../docs/integration_guide.md) and [Whitepaper §13](../docs/WHITEPAPER.md)).
 
 ### When ACOS is not the right fit
 
