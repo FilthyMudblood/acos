@@ -26,4 +26,4 @@ python3 -m unittest auto_test.test_risk_sensitivity -v
 - **γ**: no miss on this grid (τ·ΔR still fires)
 - **Benign FP**: 0 near balanced for κ ∈ {1.5, 2, 3}
 
-Paper fragment: `submissions/neurips2026_agents_in_the_wild/sec_sensitivity.tex` (folder gitignored; copy into `main.tex` on paper-pass).
+Also summarized in `docs/WHITEPAPER.md` §6 and the workshop paper (`submissions/neurips2026_agents_in_the_wild/`).

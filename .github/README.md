@@ -50,7 +50,7 @@ reason → propose intent → drift pre-scan → policy approve/reject → execu
 
 | Document | Description |
 |----------|-------------|
-| **[Whitepaper](../docs/WHITEPAPER.md)** | Industry architecture, cross-step risk, LangGraph comparison (§12) |
+| **[Whitepaper](../docs/WHITEPAPER.md)** | v1.1 architecture + threat model, empirics, Dual-LLM comparison |
 | **[Integration Guide](../docs/integration_guide.md)** | Minimal public API; LangGraph insert vs standalone runtime |
 | **[Code Logic](../docs/acos_logic_flow.md)** | Step-by-step runtime walkthrough |
 | **[Implementation Status](../docs/implementation_status.md)** | Known gaps and contributor priorities |

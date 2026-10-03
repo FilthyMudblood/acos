@@ -4,9 +4,10 @@
 
 | | |
 |---|---|
-| **Version** | 1.0 |
-| **Status** | Draft — reference implementation available in this repository |
+| **Version** | 1.1 |
+| **Status** | Draft — reference implementation + workshop revision empirics (2026-10) |
 | **Audience** | Security architects, platform engineers, compliance officers, technical executives |
+| **Companion paper** | [NeurIPS Agents in the Wild draft (PDF)](../submissions/neurips2026_agents_in_the_wild/main.pdf) · [revision checklist](./neurips_revision_checklist.md) |
 
 ---
 
@@ -44,8 +45,9 @@ This is not “better prompting.” It is **execution governance**: the same cla
 - **Cross-temporal risk detection** — incremental escalation (salami-slicing) accumulates state and triggers veto before the final exfiltration step
 - **Separated telemetry** — physical blocks vs. model refusals are logged as distinct events, not inferred from output text
 - **Budget and loop breakers** — step limits, token pressure, and retry caps terminate runaway sessions
+- **Reproducible empirics** — stateful vs. baseline FP/FN on fixture suites, sensitivity sweeps, and a limited public-bench *proxy* (see §5)
 
-**What this repository is today:** a working Python reference implementation with Streamlit UI, integration tests, and a reproducible egress benchmark. It is suitable for architecture evaluation and controlled pilots—not a substitute for a full security audit before production deployment with real PII or financial assets.
+**What this repository is today:** a working Python reference implementation with Streamlit UI, integration tests, L1 connectors (read-only FS + MCP-behind-Executor sketch), and a workshop revision package. It is suitable for architecture evaluation and controlled pilots—not a substitute for a full security audit before production deployment with real PII or financial assets.
 
 ---
 
@@ -106,9 +108,43 @@ This is the same pattern as zero-trust service mesh: identity proposes, policy d
 
 ---
 
-## 3. Architecture Overview
+## 3. Threat Model (L1)
 
-### 3.1 Ingress — session bootstrap
+This section states what L1 ACOS claims to defend against—and what it does not.
+
+### Attacker capabilities (in scope)
+
+- Inject or manipulate natural-language content observed by the proposer (prompt injection, untrusted docs/tools)
+- Steer multi-step trajectories where each call looks locally plausible (**salami-slicing**)
+- Attempt exfiltration or high-criticality actions (export, refund, external send) via **registered** tools
+
+Success for the adversary means inducing an `APPROVED` physical side effect that violates policy.
+
+### Out of scope (for L1)
+
+- Kernel exploits, stolen host credentials outside the agent path
+- Supply-chain compromise of the Gateway binary
+- Covert channels that bypass the tool registry entirely
+- Full process/network isolation (that is **L2/L3**)
+
+### L1 guarantees (given a correct host integration)
+
+| Guarantee | Meaning |
+|-----------|---------|
+| Fail-closed execute | No registry handler runs unless the Gateway returns `APPROVED` |
+| Deterministic egress | Replayable given `(D_t, E_t, C_T)` and session risk state |
+| Cross-step veto | Compositional salami can be caught when per-step kinetic checks miss |
+| Auditable deny | `physical_gate_status` / `termination_cause` distinct from model text |
+
+### Non-guarantees (honest)
+
+L1 does **not** guarantee OS confinement of a compromised proposer process; calibrated probabilities from hand-chosen `(κ, γ, τ, R_MAX)`; completeness against attacks that never propose a tool call; or official Attack Success Rate on AgentDojo/InjecAgent leaderboards (the repo ships a **policy-layer proxy**, not the full published harness).
+
+---
+
+## 4. Architecture Overview
+
+### 4.1 Ingress — session bootstrap
 
 On each user request, the Policy Gateway:
 
@@ -119,7 +155,7 @@ On each user request, the Policy Gateway:
 
 High-threat ingress can pre-emptively clear the tool whitelist; egress will hard-stop hijack-flagged sessions.
 
-### 3.2 Per-step sandbox — dynamic tool surface
+### 4.2 Per-step sandbox — dynamic tool surface
 
 Before each LLM step, the runtime **re-prunes** the available tool set based on:
 
@@ -129,11 +165,11 @@ Before each LLM step, the runtime **re-prunes** the available tool set based on:
 
 The whitelist is not static for the life of the session. The agent’s reachable tool surface shrinks as risk rises.
 
-### 3.3 Intent Proposer — structured output only
+### 4.3 Intent Proposer — structured output only
 
 The LLM writes a JSON intent to an internal trace. A separate adapter maps that trace to a typed `NoesisActionIntent` (implementation name retained in code). Deterministic shortcuts (e.g., reflex responses for trivial input, hardcoded test fixtures) can resolve without an LLM call but still flow through the same governance path when execution is required.
 
-### 3.4 Pre-egress drift check
+### 4.4 Pre-egress drift check
 
 Before arbitration, a **Drift Monitor** scores:
 
@@ -143,7 +179,7 @@ Before arbitration, a **Drift Monitor** scores:
 Soft drift → corrective feedback to the model, sandbox tightening, step discarded (no egress call).  
 Hard drift → session termination (`PFC_MELTDOWN` in telemetry; “unrecoverable drift” in plain terms).
 
-### 3.5 Egress — deterministic arbitration
+### 4.5 Egress — deterministic arbitration
 
 The **Risk Engine** (`AegisEgressGateway`) computes cross-step effective risk and returns exactly one of:
 
@@ -156,13 +192,13 @@ The **Risk Engine** (`AegisEgressGateway`) computes cross-step effective risk an
 
 Hard guards run before the equation: step budget, hijack flag, payload schema validation, tool whitelist membership.
 
-### 3.6 Side-channel monitors
+### 4.6 Side-channel monitors
 
 **Budget Circuit Breaker** listens to per-step pulse telemetry (token usage, retry count, health index derivatives). It can terminate the session independently of the main loop if resource consumption accelerates unsafely or exceeds budget.
 
 Monitors do not replace egress—they provide parallel trip wires.
 
-### 3.7 Runtime Executor — sole physical dispatch
+### 4.7 Runtime Executor — sole physical dispatch
 
 After the Policy Gateway returns `APPROVED`, the **Runtime Executor** is the only path that may cause real side effects. It does **not** decide policy; it dispatches.
 
@@ -187,7 +223,7 @@ Non-tool actions are handled without external I/O: e.g. `MEMORY_WRITE` / final-a
 
 In the reference implementation, dispatch is centralized in a single entry (e.g. `execute_approved()`), so every physical call has one choke point.
 
-### 3.8 Tool backends and MCP — only behind the Executor
+### 4.8 Tool backends and MCP — only behind the Executor
 
 **MCP (Model Context Protocol) servers, HTTP APIs, databases, and file adapters are tool backends.** They belong **behind** the Runtime Executor, not beside the LLM and not inside the Policy Gateway.
 
@@ -211,7 +247,7 @@ This is a primary differentiator versus common agent stacks that bind MCP tools 
 
 ---
 
-## 4. Request Lifecycle
+## 5. Request Lifecycle
 
 ```text
 1. User input
@@ -239,7 +275,7 @@ This is a primary differentiator versus common agent stacks that bind MCP tools 
 
 ---
 
-## 5. Cross-Temporal Risk Arbitration
+## 6. Cross-Temporal Risk Arbitration
 
 Static per-step blocklists fail against **salami-slicing**: each step appears low-risk; the attack is the trajectory.
 
@@ -275,29 +311,76 @@ R_effective(t) = R_potential(t) + τ × ΔR(t)
 | **Deterministic hot path** | No LLM call in the arbitration math; replayable given same inputs and state |
 | **Tool-weighted** | `refund_lookup` carries higher criticality than `query_db` |
 
-### Benchmark: salami-slicing exfiltration (reference implementation)
+### Signal definitions and profiles
 
-Simulated trajectory: HR vacation → VP salary → CEO salary → external email.
+| Symbol | Meaning |
+|--------|---------|
+| `D_t` | Goal-drift score (monitor-derived), in `[0, 1]` |
+| `E_t` | Logical-entropy / instability score, in `[0, 1]` |
+| `C_T` | Tool criticality (read ≪ export / act), in `[0, 1]` |
 
-Under the `balanced` profile, steps 1–3 may pass while risk accumulates; step 4 is **`REJECTED`** when `R_effective` exceeds `R_MAX`.
+Profiles `(κ, γ, τ, R_MAX)` are **hand-chosen heuristics**, not fitted estimators:
+
+| Profile | κ | γ | τ | R_MAX |
+|---------|---|---|---|-------|
+| `strict` | 4.0 | 0.8 | 1.5 | 1.0 |
+| `balanced` | 2.0 | 0.8 | 1.5 | 1.5 |
+| `research` | 1.5 | 0.75 | 1.2 | 2.5 |
+
+### Empirics: baselines (salami fixtures)
+
+Policies compared under `balanced`:
+
+| Policy | Attack catch | FN | Benign FP |
+|--------|--------------|----|-----------|
+| **stateful** (full equation) | **2/2** | 0.00 | 0/2 |
+| stateless kinetic (`R_eff = R_kinetic` only) | 1/2 | 0.50 | 0/2 |
+| hard-guard only (risk layer always approve) | 0/2 | 1.00 | 0/2 |
+
+Trajectories: `salami_original`, `salami_compositional` (moderate final spike so kinetic-only may miss), plus benign reads. Stateful vetoes both attacks; stateless misses compositional; hard-guard catches none.
 
 ```bash
+python3 auto_test/test_risk_policy_baselines.py
 python3 auto_test/test_salami_slicing_benchmark.py
 ```
 
-Example output shape:
+Illustrative telemetry on `salami_original` (`balanced`): steps 1–3 may `APPROVED` while risk accumulates; step 4 `REJECTED` when `R_effective` crosses `R_MAX`. A per-step-only checker can miss the compositional case that stateful catches.
 
-```json
-{ "step": 2, "intent": "query_vp_salary", "action": "APPROVED", "r_effective": 0.538 }
-{ "step": 3, "intent": "query_ceo_salary", "action": "APPROVED", "r_effective": 0.448 }
-{ "step": 4, "intent": "email_external", "action": "REJECTED", "r_effective": 7.221 }
+### Empirics: public-bench *proxy* (not official ASR)
+
+Policy-layer trajectories inspired by AgentDojo / InjecAgent **motifs** (injection → escalate → exfil). This is **not** official suite Attack Success Rate; we do not claim a published-harness leaderboard run.
+
+| Policy | Attack catch | FN | Benign FP |
+|--------|--------------|----|-----------|
+| stateful | **4/4** | 0.00 | 0/2 |
+| stateless kinetic | 2/4 | 0.50 | 0/2 |
+| hard-guard only | 0/4 | 1.00 | 0/2 |
+
+```bash
+python3 auto_test/test_public_bench_proxy.py
 ```
 
-A framework that only checks the current intent would approve step 4. ACOS vetoes it because the **session history** is part of the decision.
+### Sensitivity and ablations
+
+One-at-a-time sweeps around `balanced` (details: [risk_sensitivity.md](./risk_sensitivity.md)):
+
+| Setting | Catch | Veto orig / compositional |
+|---------|-------|---------------------------|
+| balanced | 2/2 | 4 / 4 |
+| no momentum (τ=0) | 1/2 | 4 / — |
+| kinetic only (γ=τ=0) | 1/2 | 4 / — |
+| strict-like | 2/2 | 2 / 2 (earlier veto) |
+| research-like | 1/2 | 4 / — |
+
+**Takeaway on these fixtures:** compositional catch is most sensitive to **τ** and **R_MAX** (and low **κ**); **γ=0** alone can still veto via `τ·ΔR` on the final spike; benign FP stays 0 near `balanced`.
+
+```bash
+python3 auto_test/test_risk_sensitivity.py
+```
 
 ---
 
-## 6. Hard Controls (Beyond the Equation)
+## 7. Hard Controls (Beyond the Equation)
 
 | Control | Mechanism | On failure |
 |---------|-----------|------------|
@@ -313,7 +396,7 @@ These are **boolean guards**. The Risk Engine handles **graded, cross-step** thr
 
 ---
 
-## 7. Telemetry and Audit
+## 8. Telemetry and Audit
 
 ACOS separates **what the model intended** from **what policy allowed**.
 
@@ -331,7 +414,7 @@ The Streamlit frontend writes local audit rows; optional Supabase integration pe
 
 ---
 
-## 8. Deployment Conformance Levels
+## 9. Deployment Conformance Levels
 
 | Level | Description | Suitable for |
 |-------|-------------|--------------|
@@ -344,7 +427,7 @@ This repository implements **L1** as an in-process Python runtime. L2/L3 require
 
 ---
 
-## 9. When to Use ACOS
+## 10. When to Use ACOS
 
 **Strong fit:**
 
@@ -361,11 +444,11 @@ This repository implements **L1** as an in-process Python runtime. L2/L3 require
 
 ---
 
-## 10. Implementation Overview
+## 11. Implementation Overview
 
 The reference implementation in this repository realizes the L1 conformance model as an in-process Python runtime.
 
-### 10.1 Runtime loop
+### 11.1 Runtime loop
 
 ```text
 User input
@@ -387,7 +470,7 @@ User input
 **Entry point:** `agent_os_runtime.py` — `run_agent_os_once()`  
 **Operator UI:** `frontend/app_os_terminal.py`
 
-### 10.2 What is implemented today
+### 11.2 What is implemented today
 
 | Capability | Status |
 |------------|--------|
@@ -401,9 +484,10 @@ User input
 | Budget Circuit Breaker (pulse side-channel) | Yes |
 | Tool registry with `criticality_score` + audit records | Yes |
 | Structured telemetry (`physical_gate_status`, `termination_cause`) | Yes |
-| Integration tests + salami-slicing benchmark | Yes |
+| Integration tests + salami / baseline / sensitivity / proxy suites | Yes |
+| L1 connectors (read-only FS + MCP-behind-Executor sketch) | Yes |
 
-### 10.3 Safe public description
+### 11.3 Safe public description
 
 > The current ACOS prototype implements a **capability-isolated** agent runtime. The Intent Proposer generates structured intents; all physical execution is mediated by the Policy Gateway. Side-channel monitors observe runtime health through pulse snapshots and can inject corrective feedback or trigger terminal resolution. Some mechanisms—including `OVERRIDE`, ICU enforcement, and physical socket isolation—remain protocol-level or architectural placeholders and must be completed before production use with regulated data.
 
@@ -411,7 +495,7 @@ Full engineering gap list: [implementation_status.md](./implementation_status.md
 
 ---
 
-## 11. Known Gaps (Before Production)
+## 12. Known Gaps (Before Production)
 
 | Gap | Risk | Current state |
 |-----|------|---------------|
@@ -421,22 +505,32 @@ Full engineering gap list: [implementation_status.md](./implementation_status.md
 | **Hardcoded ingress budget** | Cannot tier by user/task/risk | Fixed `2000` tokens / `10` steps |
 | **Regex ingress scanner** | Misses encoded/indirect injection | Pattern-based amygdala probe |
 | **Fragile intent parsing** | Heuristic fallback may misfire | JSON parse + keyword inference |
-| **Demo tools** | Not production integrations | Mock `query_db`, `refund_lookup` |
+| **Demo tools** | Not full production MCP/API suites | Mocks remain; plus L1 read-only FS + MCP-behind-Executor *sketch* (`core_runtime/connectors/`) |
 | **Session-only memory** | No governed long-term recall | `GlobalStateTensor` per session |
 | **Simplified vitals scoring** | Drift/budget signals are heuristic | Room for stronger momentum/uncertainty |
 | **Meltdown taxonomy** | Multiple halt paths, overlapping labels | See implementation_status.md |
-| **Test coverage** | Edge paths under-tested | OVERRIDE, ICU, all terminal pulses |
+| **Test coverage** | Edge paths still thin; empirics expanded | Baselines / sensitivity / proxy / connectors added; OVERRIDE, ICU paths still open |
 | **Security hygiene** | Sample secrets / local config leakage | Audit `.gitignore` and examples |
 
-**Priority for contributors:** (1) `OVERRIDE` + ICU behavior, (2) strict intent parsing, (3) exit-path tests, (4) secrets hygiene, (5) production connectors, (6) stronger vitals, (7) governed memory.
+**Priority for contributors:** (1) `OVERRIDE` + ICU behavior, (2) strict intent parsing, (3) exit-path tests, (4) secrets hygiene, (5) production MCP/API connectors beyond L1 sketches, (6) official public-bench harness integration, (7) stronger vitals / governed memory.
 
 Treat this codebase as a **reference architecture and evaluation harness**, not a certified production appliance. No third-party security audit has been completed.
 
 ---
 
-## 12. Comparison at a Glance
+## 13. Comparison at a Glance
 
-### 12.1 Typical agent frameworks vs ACOS
+### 13.0 Dual LLM / CaMeL-style designs vs ACOS
+
+Dual-LLM / CaMeL-style systems reduce blast radius by separating privileged and unprivileged model contexts (or constraining how untrusted content flows into tool arguments). **Overlap:** both care about prompt injection and tool misuse. **Difference in emphasis:** Dual LLM / CaMeL primarily harden *how planning consumes untrusted data*; ACOS focuses on a fail-closed *runtime execution contract*—structured intent in, deterministic gateway decision out, physical side effects only via the Executor, with **stateful** cross-step risk. They compose: a Dual-LLM proposer should still face ACOS before MCP/API side effects.
+
+| Line | Shared idea | ACOS emphasizes |
+|------|-------------|-----------------|
+| Dual LLM / CaMeL | Limit what untrusted context can authorize | Runtime contract + cross-step risk; proposer-agnostic |
+| API IAM / sandboxes | Mediate privileged calls | Agent-step intents, MCP placement, session risk debt |
+| Agent orchestrators | Route and persist workflows | Authorization ≠ routing; Executor-only backends |
+
+### 13.1 Typical agent frameworks vs ACOS
 
 | | Typical agent framework | ACOS |
 |---|------------------------|------|
@@ -446,7 +540,7 @@ Treat this codebase as a **reference architecture and evaluation harness**, not 
 | Audit | Chat transcripts | Structured gate status + termination cause |
 | Runaway sessions | Manual kill / cost alerts | Step budget + circuit breaker + retry cap |
 
-### 12.2 LangGraph vs ACOS — different problems
+### 13.2 LangGraph vs ACOS — different problems
 
 LangGraph is a **workflow engine** (how to orchestrate agents). ACOS is an **execution governor** (whether an agent may cause real side effects). They are complementary, not direct substitutes.
 
@@ -467,24 +561,24 @@ ACOS       = whether a proposed action may execute on real systems
 | **Salami-slicing / cross-step veto** | No session-level `R_effective` by default | Core feature via stateful Risk Engine |
 | **Auditable physical deny** | Must be inferred from logs | `physical_gate_status`, `termination_cause` |
 
-### 12.3 Where ACOS is weaker than LangGraph
+### 13.3 Where ACOS is weaker than LangGraph
 
 1. **Orchestration** — the largest gap. No first-class support for branching workflows, parallel specialists, dynamic routing, or approval gates.
 2. **Developer experience** — fewer examples, integrations, and debugging tooling compared to the LangGraph / LangSmith stack.
 3. **State persistence** — no checkpoint API for long-running or human-interrupted tasks.
 4. **Multi-agent** — no sub-agent roles, shared-handoff protocol, or per-role tool surfaces in the current codebase.
-5. **Implementation completeness** — `OVERRIDE`, ICU enforcement, strict intent parsing, and production connectors remain open (see Section 11).
+5. **Implementation completeness** — `OVERRIDE`, ICU enforcement, strict intent parsing, and production connectors remain open (see Section 12).
 
-### 12.4 Where ACOS is stronger than LangGraph
+### 13.4 Where ACOS is stronger than LangGraph
 
 1. **Proposal ≠ execution** — hard boundary; the model cannot call APIs without an explicit `APPROVED` decision.
-2. **Cross-temporal risk** — incremental escalation accumulates in session state; the salami-slicing benchmark demonstrates veto on the exfiltration step.
+2. **Cross-temporal risk** — incremental escalation accumulates in session state; baselines show stateful **2/2** catch vs. **1/2** (stateless) and **0/2** (hard-guard) on the fixture suite.
 3. **Separated telemetry** — physical policy blocks are not confused with model refusals in chat text.
 4. **Deterministic egress hot path** — arbitration math is replayable without LLM calls in the decision path.
 5. **Tool criticality** — `criticality_score` feeds the Risk Engine; read vs act vs export are weighted differently.
-6. **MCP / tool transports behind the Executor** — MCP servers are backends after approval, not direct model bindings; connecting MCP does not grant the LLM ungoverned privilege (see §3.7–3.8).
+6. **MCP / tool transports behind the Executor** — MCP servers are backends after approval, not direct model bindings; connecting MCP does not grant the LLM ungoverned privilege (see Architecture: MCP placement / Executor rules).
 
-### 12.5 Multi-agent scenarios
+### 13.5 Multi-agent scenarios
 
 Multi-agent needs do **not** automatically require LangGraph. The clean pattern for governed multi-agent is:
 
@@ -497,7 +591,7 @@ Thin supervisor (routing only)
 
 LangGraph may implement the supervisor layer when workflows are complex (parallel branches, frequent human interrupts). ACOS must still own the execution choke point. Letting each sub-agent bind and invoke tools independently defeats the governance model.
 
-### 12.6 When to use which
+### 13.6 When to use which
 
 | Primary pain | Better fit |
 |--------------|------------|
@@ -509,15 +603,21 @@ For a single governed agent loop, **adding LangGraph often duplicates orchestrat
 
 ---
 
-## 13. Getting Started
+## 14. Getting Started
 
 | Resource | Link |
 |----------|------|
 | Implementation gaps (engineering) | [Implementation Status](./implementation_status.md) |
 | Code walkthrough | [ACOS Code Logic](./acos_logic_flow.md) |
 | Execution contract (RFC draft) | [Aegis CCB Zero-Trust Execution Contract](./aegis_ccb_zero_trust_execution_contract_rfc_draft.md) |
+| NeurIPS revision checklist | [neurips_revision_checklist.md](./neurips_revision_checklist.md) |
+| Risk sensitivity notes | [risk_sensitivity.md](./risk_sensitivity.md) |
+| Workshop paper draft (PDF) | [main.pdf](../submissions/neurips2026_agents_in_the_wild/main.pdf) |
 | Quick start | [README](../README.md) |
-| Salami-slicing benchmark | `python3 auto_test/test_salami_slicing_benchmark.py` |
+| Policy baselines | `python3 auto_test/test_risk_policy_baselines.py` |
+| Public-bench proxy | `python3 auto_test/test_public_bench_proxy.py` |
+| Sensitivity | `python3 auto_test/test_risk_sensitivity.py` |
+| Connector demo | `python3 examples/sandbox_mcp_behind_executor.py` |
 | Full test suite | `python3 auto_test/run_all.py` |
 
 ---
@@ -542,7 +642,7 @@ For readers reviewing the source code:
 
 ## Appendix B: Risk Equation Constants
 
-Tunable per deployment profile (`strict`, `balanced`, `research` in benchmark):
+Tunable per deployment profile (`strict`, `balanced`, `research` in benchmark). Profiles are **hand-chosen heuristics**, not fitted estimators. See §6 for empirics.
 
 | Symbol | Meaning | Typical role |
 |--------|---------|--------------|
@@ -550,7 +650,11 @@ Tunable per deployment profile (`strict`, `balanced`, `research` in benchmark):
 | `γ` (gamma) | Decay of accumulated risk | Lower → longer memory of prior steps |
 | `τ` (tau) | Acceleration multiplier | Higher → penalizes rapid risk spikes |
 | `R_MAX` | Hard redline | Lower → stricter |
+| `D_t` | Goal-drift input | Monitor-derived `[0,1]` |
+| `E_t` | Entropy / instability input | Monitor-derived `[0,1]` |
 | `C_T` | Tool criticality | Per-tool classification (read vs. act vs. export) |
+
+On the current fixture suite, compositional catch is most sensitive to **τ** and **R_MAX** (and low **κ**); details in [risk_sensitivity.md](./risk_sensitivity.md).
 
 ---
 
@@ -562,4 +666,5 @@ This whitepaper and the accompanying reference implementation are provided **as-
 
 ---
 
-*ACOS — Governed execution for agents that touch real systems.*
+*ACOS — Governed execution for agents that touch real systems.*  
+*Whitepaper v1.1 syncs the 2026-10 workshop revision (threat model, baselines, proxy, sensitivity, L1 connectors).*
